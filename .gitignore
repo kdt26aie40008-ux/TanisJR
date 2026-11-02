@@ -1,0 +1,47 @@
+# ===== 個人データ・秘密情報（絶対にコミットしない） =====
+data/
+*.db
+*.sqlite
+*.sqlite3
+*.key
+*.pem
+.env
+.env.*
+!.env.example
+credentials*.json
+client_secret*.json
+token*.json
+backups/
+*.twinbak
+
+# ===== Python =====
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+
+# ===== Node / フロントエンド =====
+node_modules/
+frontend/dist/
+*.tsbuildinfo
+
+# ===== 学習環境（training/fetch_llama_cpp.py と README の手順で再現する） =====
+training/llama.cpp/
+
+# ===== モデル・学習成果物（大容量） =====
+models/
+*.gguf
+*.safetensors
+adapters/
+
+# ===== VRM（ライセンスの都合で個別管理） =====
+*.vrm
+
+# ===== その他 =====
+logs/
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

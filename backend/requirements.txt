@@ -1,0 +1,11 @@
+# 動作確認済みバージョン (Python 3.14.5 / Windows 11, 2026-11-02)
+fastapi==0.162.0
+uvicorn[standard]==0.54.0
+httpx==0.28.1
+pydantic==2.14.2
+# Phase 2: 記憶・データ保護
+chromadb==1.5.9
+cryptography==50.0.2
+# Phase 3: 音声認識（PyAV は faster-whisper 同梱のデコーダーが未対応のため自前でデコードに使用）
+faster-whisper==1.2.1
+av==19.0.2
