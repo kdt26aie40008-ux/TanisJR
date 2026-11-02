@@ -1,0 +1,114 @@
+import { api, errorMessage } from '../api/client'
+
+/**
+ * 読み上げキュー。文ごとに合成を先行して開始し、順番に再生する。
+ * 再生中の音量（level）はアバターの口パクに使う。
+ */
+export class SpeechPlayer {
+  private ctx: AudioContext | null = null
+  private analyser: AnalyserNode | null = null
+  private samples = new Float32Array(1024)
+  private chain: Promise<void> = Promise.resolve()
+  private generation = 0
+  private pending = 0
+  private current: AudioBufferSourceNode | null = null
+  private controller = new AbortController()
+
+  onSpeakingChange?: (speaking: boolean) => void
+  onError?: (message: string) => void
+
+  private context(): AudioContext {
+    if (!this.ctx) {
+      this.ctx = new AudioContext()
+      this.analyser = this.ctx.createAnalyser()
+      this.analyser.fftSize = 1024
+      this.analyser.connect(this.ctx.destination)
+    }
+    return this.ctx
+  }
+
+  /** ブラウザーの自動再生制限を解除する（ボタン操作などの直後に呼ぶ） */
+  unlock(): void {
+    void this.context().resume()
+  }
+
+  enqueue(text: string, speaker?: number): void {
+    const generation = this.generation
+    const ctx = this.context()
+    const signal = this.controller.signal
+    // 合成は先に始めておき、再生だけ順番に行う
+    const audio = api.synthesize(text, speaker, signal).then((buf) => ctx.decodeAudioData(buf))
+    audio.catch(() => undefined)
+    this.setPending(this.pending + 1)
+    this.chain = this.chain
+      .then(async () => {
+        if (generation !== this.generation) return
+        let buffer: AudioBuffer
+        try {
+          buffer = await audio
+        } catch (err) {
+          if (generation === this.generation && !signal.aborted) this.onError?.(errorMessage(err))
+          return
+        }
+        if (generation !== this.generation) return
+        await this.play(buffer)
+      })
+      .finally(() => {
+        if (generation === this.generation) this.setPending(this.pending - 1)
+      })
+  }
+
+  private play(buffer: AudioBuffer): Promise<void> {
+    return new Promise((resolve) => {
+      const ctx = this.context()
+      const source = ctx.createBufferSource()
+      source.buffer = buffer
+      source.connect(this.analyser!)
+      source.onended = () => {
+        if (this.current === source) this.current = null
+        resolve()
+      }
+      this.current = source
+      void ctx.resume().then(() => source.start())
+    })
+  }
+
+  stop(): void {
+    this.generation += 1
+    this.controller.abort()
+    this.controller = new AbortController()
+    try {
+      this.current?.stop()
+    } catch {
+      // 再生開始前に停止した場合
+    }
+    this.current = null
+    this.chain = Promise.resolve()
+    this.setPending(0)
+  }
+
+  /** 現在の再生音量（0〜1 程度） */
+  level(): number {
+    if (!this.analyser || !this.current) return 0
+    this.analyser.getFloatTimeDomainData(this.samples)
+    let sum = 0
+    for (const s of this.samples) sum += s * s
+    return Math.min(1, Math.sqrt(sum / this.samples.length) * 4)
+  }
+
+  get speaking(): boolean {
+    return this.pending > 0
+  }
+
+  private setPending(value: number): void {
+    const before = this.pending > 0
+    this.pending = Math.max(0, value)
+    if (before !== this.pending > 0) this.onSpeakingChange?.(this.pending > 0)
+  }
+
+  dispose(): void {
+    this.stop()
+    void this.ctx?.close()
+    this.ctx = null
+  }
+}
