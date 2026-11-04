@@ -37,6 +37,10 @@ adapters/
 
 # ===== VRM（ライセンスの都合で個別管理） =====
 *.vrm
+# 例外: 全員が利用・再配布できる標準アバター（docs/AVATAR.md 参照）
+!assets/avatars/*.vrm
+# VRoid Studio の編集用ファイル
+*.vroid
 
 # ===== その他 =====
 logs/

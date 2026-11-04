@@ -83,7 +83,7 @@ export function AvatarPage() {
           getLevel={testLevel}
           emotion={emotion}
           activity={activity}
-          emptyMessage="アバターが選択されていません。下のフォームから VRM ファイルを読み込んでください。"
+          emptyMessage="アバターが選択されていません。下の一覧の標準アバターを「使用する」か、VRM ファイルを読み込んでください。"
         />
         {active && (
           <div className="actions wrap">
@@ -238,9 +238,11 @@ function AvatarItem({ avatar, active, onActivate, onTogglePlaceholder, onRename,
           <strong>{avatar.name}</strong>
         )}
         {active && <span className="tag">使用中</span>}
+        {avatar.builtin && <span className="tag">標準</span>}
         {avatar.is_placeholder && <span className="tag important">仮モデル</span>}
         <span className="hint">
-          VRM {avatar.vrm_version} ・ {formatSize(avatar.size)} ・ {formatDate(avatar.created_at)}
+          VRM {avatar.vrm_version} ・ {formatSize(avatar.size)}
+          {avatar.builtin ? ' ・ アプリに同梱（ダウンロード不要）' : ` ・ ${formatDate(avatar.created_at)}`}
         </span>
       </div>
       <details className="memory-source">
@@ -317,15 +319,19 @@ function AvatarItem({ avatar, active, onActivate, onTogglePlaceholder, onRename,
                 使用する
               </button>
             )}
-            <button className="btn small" onClick={onTogglePlaceholder}>
+            {!avatar.builtin && (
+              <>
+                <button className="btn small" onClick={onTogglePlaceholder}>
               {avatar.is_placeholder ? '正式なモデルにする' : '仮モデルにする'}
             </button>
             <button className="btn small" onClick={() => setEditing(true)}>
               名前を変更
             </button>
-            <button className="btn small danger" onClick={onDelete}>
-              削除
-            </button>
+                <button className="btn small danger" onClick={onDelete}>
+                  削除
+                </button>
+              </>
+            )}
           </>
         )}
       </div>

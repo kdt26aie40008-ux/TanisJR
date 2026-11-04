@@ -20,6 +20,11 @@ def _not_found() -> AppError:
     return AppError(404, "avatar_not_found", "指定されたアバターが見つかりません。")
 
 
+def _reject_builtin(services: Services, avatar_id: str) -> None:
+    if services.avatars.is_builtin(avatar_id):
+        raise AppError(403, "builtin_avatar", "標準アバターは変更・削除できません。")
+
+
 @router.get("")
 def list_avatars(services: Services = Depends(get_services)) -> dict:
     return {"avatars": services.avatars.list(), "active_id": services.settings.get().avatar_id or None}
@@ -55,6 +60,7 @@ def avatar_file(avatar_id: str = AvatarId, services: Services = Depends(get_serv
 
 @router.put("/{avatar_id}")
 def update_avatar(body: AvatarUpdate, avatar_id: str = AvatarId, services: Services = Depends(get_services)) -> Avatar:
+    _reject_builtin(services, avatar_id)
     avatar = services.avatars.update(avatar_id, body.name, body.is_placeholder)
     if avatar is None:
         raise _not_found()
@@ -71,6 +77,7 @@ def activate(avatar_id: str = AvatarId, services: Services = Depends(get_service
 
 @router.delete("/{avatar_id}")
 def delete_avatar(avatar_id: str = AvatarId, services: Services = Depends(get_services)) -> dict:
+    _reject_builtin(services, avatar_id)
     if not services.avatars.delete(avatar_id):
         raise _not_found()
     if services.settings.get().avatar_id == avatar_id:

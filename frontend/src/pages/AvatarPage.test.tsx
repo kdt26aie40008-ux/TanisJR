@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import type { Avatar } from '../api/types'
@@ -23,7 +23,10 @@ const AVATAR: Avatar = {
     modification: 'allowModificationRedistribution',
   },
   created_at: '2026-11-02T00:00:00+00:00',
+  builtin: false,
 }
+
+const BUILTIN: Avatar = { ...AVATAR, id: 'b'.repeat(32), name: '標準アバター（男性）', is_placeholder: false, created_at: '', builtin: true }
 
 describe('AvatarPage', () => {
   it('marks placeholder models and shows the required credit', async () => {
@@ -33,6 +36,25 @@ describe('AvatarPage', () => {
     expect(screen.getByText('Seed-san / 作者: VirtualCast, Inc.')).toBeInTheDocument()
     // jsdom には WebGL が無いので、分かりやすいメッセージを出す
     expect(await screen.findByText('この環境では3D表示（WebGL）が使えません。')).toBeInTheDocument()
+  })
+
+  it('lets built-in avatars be selected but not edited or deleted', async () => {
+    const user = userEvent.setup()
+    let activated = ''
+    mockFetch({
+      'GET /api/avatars': () => jsonResponse({ avatars: [AVATAR, BUILTIN], active_id: AVATAR.id }),
+      [`POST /api/avatars/${BUILTIN.id}/activate`]: () => {
+        activated = BUILTIN.id
+        return jsonResponse({ active_id: BUILTIN.id })
+      },
+    })
+    render(<AvatarPage />)
+    const item = (await screen.findByText('標準アバター（男性）')).closest('li') as HTMLElement
+    expect(within(item).getByText('標準')).toBeInTheDocument()
+    expect(within(item).queryByRole('button', { name: '削除' })).toBeNull()
+    expect(within(item).queryByRole('button', { name: '名前を変更' })).toBeNull()
+    await user.click(within(item).getByRole('button', { name: '使用する' }))
+    expect(activated).toBe(BUILTIN.id)
   })
 
   it('shows the server validation message for a non-VRM file', async () => {

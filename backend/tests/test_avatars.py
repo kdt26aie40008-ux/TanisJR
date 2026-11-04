@@ -2,8 +2,24 @@ from __future__ import annotations
 
 import json
 import struct
+from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
+
+from app.avatars import BUILTIN_AVATARS, parse_vrm
+from app.config import REPO_ROOT
+
+MALE_ID = BUILTIN_AVATARS[0].id
+
+
+@pytest.fixture(autouse=True)
+def builtin_dir(tmp_path: Path, monkeypatch) -> Path:  # noqa: ANN001
+    """同梱の標準アバターを、テストごとの空フォルダーに差し替える。"""
+    directory = tmp_path / "builtin"
+    directory.mkdir()
+    monkeypatch.setattr("app.avatars.BUILTIN_DIR", directory)
+    return directory
 
 VRM1_META = {
     "name": "テストちゃん",
@@ -108,6 +124,34 @@ def test_activate_rename_and_delete(client: TestClient, config) -> None:  # noqa
     # 選択中を削除したら未選択になる
     assert client.get("/api/avatars").json()["active_id"] is None
     assert client.delete(f"/api/avatars/{b['id']}").status_code == 404
+
+
+def test_builtin_avatars_listed_and_selectable(client: TestClient, builtin_dir: Path) -> None:
+    (builtin_dir / BUILTIN_AVATARS[0].file).write_bytes(vrm1())
+    # 女性用のファイルが無い場合は一覧に出さない
+    avatars = client.get("/api/avatars").json()["avatars"]
+    assert [(a["id"], a["builtin"]) for a in avatars] == [(MALE_ID, True)]
+    assert avatars[0]["name"] == BUILTIN_AVATARS[0].name
+    # アップロードしたものは標準アバターより前に並ぶ
+    mine = upload(client, vrm0()).json()
+    assert [a["id"] for a in client.get("/api/avatars").json()["avatars"]] == [mine["id"], MALE_ID]
+
+    assert client.post(f"/api/avatars/{MALE_ID}/activate").status_code == 200
+    assert client.get("/api/avatars").json()["active_id"] == MALE_ID
+    assert client.get(f"/api/avatars/{MALE_ID}/file").content == vrm1()
+    # 変更・削除はできない
+    assert client.put(f"/api/avatars/{MALE_ID}", json={"name": "x"}).status_code == 403
+    assert client.delete(f"/api/avatars/{MALE_ID}").status_code == 403
+    assert (builtin_dir / BUILTIN_AVATARS[0].file).exists()
+
+
+def test_bundled_avatar_files_allow_redistribution() -> None:
+    """リポジトリーに同梱する VRM は、全員が利用・再配布できる設定になっていること。"""
+    for b in BUILTIN_AVATARS:
+        version, meta = parse_vrm((REPO_ROOT / "assets" / "avatars" / b.file).read_bytes())
+        assert version == "1.0"
+        assert meta["avatar_permission"] == "everyone"
+        assert meta["allow_redistribution"] is True
 
 
 def test_avatar_settings_cannot_be_set_directly(client: TestClient) -> None:
