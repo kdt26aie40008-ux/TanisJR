@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -20,7 +21,8 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app import __version__
 from app.backup import BackupError
-from app.config import Config, load_config
+from app.config import LEGACY_DATA_DIR, Config, load_config
+from app.data_location import apply_start_fresh, migrate_legacy_data
 from app.crypto import CryptoError, DataLocked, DpapiProtector, KeyStore, Protector, Vault
 from app.db import Database
 from app.deps import Services
@@ -44,6 +46,7 @@ from app.routers import memories as memories_router
 from app.security import OriginCheckMiddleware
 from app.services.data_protection import unlock
 from app.services.memory import MemoryService
+from app.speech.engine import EngineLauncher
 from app.speech.stt import Transcriber, WhisperService
 from app.speech.tts import AivisClient
 from app.vector_index import VectorIndex
@@ -90,6 +93,7 @@ def create_app(
     start_scheduler: bool = True,
     allow_process_control: bool = True,
     background: bool = False,
+    aivis_engine_path: Path | None = None,
 ) -> FastAPI:
     config = config or load_config()
     db = Database(config.db_path)
@@ -104,6 +108,7 @@ def create_app(
     calendar = CalendarService(db, vault, settings_repo, google)
     notifier = notifier or WindowsToastNotifier()
     training_data = TrainingDataRepository(db, vault, conversations)
+    tts = AivisClient(config.aivis_url, transport=aivis_transport)
     services = Services(
         config=config,
         db=db,
@@ -117,7 +122,8 @@ def create_app(
         index=index,
         ollama=ollama,
         stt=transcriber or WhisperService(config.models_dir / "whisper"),
-        tts=AivisClient(config.aivis_url, transport=aivis_transport),
+        tts=tts,
+        tts_engine=EngineLauncher(tts, config.aivis_url, aivis_engine_path),
         avatars=AvatarStore(db, config.data_dir / "avatars"),
         google=google,
         calendar=calendar,
@@ -147,6 +153,10 @@ def create_app(
             if start_scheduler and services.scheduler:
                 # 予定の通知（再起動後も DB の状態から再開する）
                 tasks.append(asyncio.create_task(services.scheduler.run_forever()))
+            settings_now = services.settings.get()
+            if start_scheduler and settings_now.tts_engine_autostart and settings_now.tts_speaker is not None:
+                # 読み上げを使う設定なら、AivisSpeech のアプリを開かなくてもエンジンを起動しておく
+                services.tts_engine.ensure_started()
         yield
         for task in tasks:
             task.cancel()
@@ -274,12 +284,23 @@ def main() -> None:
     args = parser.parse_args()
 
     config = load_config()
+    # 再起動時は前のプロセスの終了を待つ（前のプロセスが開いているファイルは移動できないため、データの退避より先に行う）
+    if args.wait_for_port and not wait_for_port_free(config.port):
+        print(f"ポート {config.port} が使用中のため起動できません", file=sys.stderr)
+        sys.exit(1)
+    # データの移動・退避は、ログファイルなどを開く前に行う（開いているファイルは Windows で移動できない）
+    startup_notes: list[str] = []
+    if not os.environ.get("TWIN_DATA_DIR"):
+        result = migrate_legacy_data(LEGACY_DATA_DIR, config.data_dir, DpapiProtector())
+        startup_notes.append(f"以前の保存先の確認: {result}")
+    archived = apply_start_fresh(config.data_dir)
+    if archived:
+        startup_notes.append(f"以前のデータを {archived.name} に退避し、新しく始めました")
     if args.background or sys.stderr is None:
         _redirect_output_to_log(config.data_dir)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s", force=True)
-    if args.wait_for_port and not wait_for_port_free(config.port):
-        logger.error("ポート %d が使用中のため起動できません", config.port)
-        sys.exit(1)
+    for note in startup_notes:
+        logger.info(note)
     logger.info("データ保存先: %s", config.data_dir)
     logger.info("http://127.0.0.1:%d で起動します", config.port)
     # 外部からの接続を受けないよう 127.0.0.1 に固定する

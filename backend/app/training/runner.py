@@ -261,38 +261,46 @@ class TrainingManager:
         return result
 
     def _register_with_ollama(self, run_id: str, run_dir: Path) -> str:
-        """統合済みモデルを GGUF に変換し、量子化して Ollama に登録する。
+        """統合済みモデルを Ollama に登録する。
 
-        Ollama は LoRA アダプター単体の読み込みに対応していないため、元モデルに統合した完全なモデルを使う。
+        Ollama は LoRA アダプター単体にも、GGUF の登録時量子化にも対応していないため（0.40 で確認）、
+        1. 統合済みモデル（safetensors）をそのまま読み込ませ、登録時に q4_K_M へ量子化する
+        2. それが失敗した場合は、llama.cpp で q8_0 の GGUF に変換して登録する
         会話の書式（テンプレート）とパラメーターは元の Ollama モデルから引き継ぐ。
         """
         run = self.get(run_id)
         base = find_base(run.base) if run else None
         if base is None:
             raise TrainingError("ベースモデルが見つかりません。")
-        if not CONVERT_SCRIPT.exists():
-            raise TrainingError("GGUF 変換スクリプト（training/llama.cpp）がありません。", "converter_missing")
         merged = run_dir / "merged"
-        gguf = run_dir / "model-f16.gguf"
+        gguf = run_dir / "model-q8_0.gguf"
+        name = f"twin-{base.id}-{run_id[:8]}"
         try:
-            result = self._run_logged(
-                [str(TRAINING_PYTHON), str(CONVERT_SCRIPT), str(merged), "--outfile", str(gguf), "--outtype", "f16"],
-                CONVERT_SCRIPT.parent, run_dir, "convert_hf_to_gguf", _clean_env(),
-            )
-            if result.returncode != 0 or not gguf.exists():
-                raise TrainingError("学習結果を GGUF に変換できませんでした。ログを確認してください。", "convert_failed")
             shown = self._run_logged(["ollama", "show", base.ollama_model, "--modelfile"], run_dir, run_dir, "ollama show")
             if shown.returncode != 0:
                 raise TrainingError(f"元モデル「{base.ollama_model}」が Ollama に導入されていません。", "ollama_base_missing")
             # FROM だけを差し替え、テンプレート・停止語・パラメーターは元モデルのものを使う
-            (run_dir / "Modelfile").write_text(replace_from(shown.stdout, "./model-f16.gguf"), encoding="utf-8")
-            name = f"twin-{base.id}-{run_id[:8]}"
-            result = self._run_logged(["ollama", "create", name, "-q", QUANTIZATION, "-f", "Modelfile"], run_dir, run_dir, "ollama create")
+            (run_dir / "Modelfile").write_text(replace_from(shown.stdout, "./merged"), encoding="utf-8")
+            result = self._run_logged(
+                ["ollama", "create", name, "-q", QUANTIZATION, "-f", "Modelfile"], run_dir, run_dir, "ollama create (safetensors)"
+            )
+            if result.returncode == 0:
+                return name
+            if not CONVERT_SCRIPT.exists():
+                raise TrainingError("Ollama への登録に失敗しました。ログを確認してください。", "ollama_create_failed")
+            result = self._run_logged(
+                [str(TRAINING_PYTHON), str(CONVERT_SCRIPT), str(merged), "--outfile", str(gguf), "--outtype", "q8_0"],
+                CONVERT_SCRIPT.parent, run_dir, "convert_hf_to_gguf (q8_0)", _clean_env(),
+            )
+            if result.returncode != 0 or not gguf.exists():
+                raise TrainingError("学習結果を GGUF に変換できませんでした。ログを確認してください。", "convert_failed")
+            (run_dir / "Modelfile").write_text(replace_from(shown.stdout, f"./{gguf.name}"), encoding="utf-8")
+            result = self._run_logged(["ollama", "create", name, "-f", "Modelfile"], run_dir, run_dir, "ollama create (gguf)")
             if result.returncode != 0:
                 raise TrainingError("Ollama への登録に失敗しました。ログを確認してください。", "ollama_create_failed")
             return name
         finally:
-            # 大きな中間ファイル（統合モデル・f16 GGUF）は登録後に削除する。LoRA アダプター（数十MB）は残す
+            # 大きな中間ファイル（統合モデル・GGUF）は登録後に削除する。LoRA アダプター（数十MB）は残す
             shutil.rmtree(merged, ignore_errors=True)
             gguf.unlink(missing_ok=True)
 

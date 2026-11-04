@@ -98,19 +98,36 @@ async def transcribe(request: Request, services: Services = Depends(get_services
 # ---------- 音声合成 ----------
 
 
+def _engine_info(services: Services) -> dict:
+    return {
+        "installed": services.tts_engine.installed(),
+        "starting": services.tts_engine.starting,
+        "autostart": services.settings.get().tts_engine_autostart,
+    }
+
+
 @router.get("/tts/speakers")
 async def speakers(services: Services = Depends(get_services)) -> dict:
     settings = services.settings.get()
     try:
         items = await services.tts.speakers()
     except TtsError as exc:
-        return {"available": False, "message": exc.message, "speakers": [], "selected": settings.tts_speaker}
+        message = exc.message
+        if settings.tts_engine_autostart and services.tts_engine.installed():
+            # AivisSpeech のアプリを開いていなくても、エンジンだけを画面なしで起動する
+            services.tts_engine.ensure_started()
+            message = "読み上げエンジン（AivisSpeech）を起動しています。1分ほどお待ちください。"
+        return {
+            "available": False, "message": message, "speakers": [], "selected": settings.tts_speaker,
+            "engine": _engine_info(services),
+        }
     acknowledged = set(settings.tts_acknowledged_speakers)
     return {
         "available": True,
         "message": None,
         "speakers": [{**s, "acknowledged": s["speaker_uuid"] in acknowledged} for s in items],
         "selected": settings.tts_speaker,
+        "engine": _engine_info(services),
     }
 
 
@@ -148,6 +165,10 @@ async def synthesize(body: TtsRequest, services: Services = Depends(get_services
     text = clean_for_speech(body.text)
     if not text:
         raise AppError(400, "empty_text", "読み上げる文章がありません。")
+    if settings.tts_engine_autostart and services.tts_engine.installed() and not await services.tts_engine.running():
+        # エンジンが止まっていれば起動して、準備ができるまで待つ（初回のみ1分程度）
+        if not await services.tts_engine.wait_ready():
+            raise AppError(503, "tts_starting", services.tts_engine.last_error or "読み上げエンジンを起動できませんでした。")
     try:
         speaker_uuid = await services.tts.speaker_uuid_for_style(style_id)
         if speaker_uuid is None:

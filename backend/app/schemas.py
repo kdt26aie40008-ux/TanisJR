@@ -113,6 +113,8 @@ class AppSettings(StrictModel):
     tts_speaker: int | None = Field(default=None, ge=0)
     tts_speed: float = Field(default=1.0, ge=0.5, le=2.0)
     tts_auto_read: bool = True
+    # AivisSpeech のアプリ画面を開かなくても、読み上げエンジンだけを自動で起動する
+    tts_engine_autostart: bool = True
     # 利用規約を確認した AivisSpeech の話者 (speaker_uuid)
     tts_acknowledged_speakers: list[str] = Field(default_factory=list)
     avatar_id: str = ""
@@ -152,6 +154,7 @@ class SettingsUpdate(StrictModel):
     tts_speaker: int | None = Field(default=None, ge=0)
     tts_speed: float | None = Field(default=None, ge=0.5, le=2.0)
     tts_auto_read: bool | None = None
+    tts_engine_autostart: bool | None = None
     notifications_enabled: bool | None = None
     default_reminder_minutes: int | None = Field(default=None, ge=0, le=1440)
     calendar_ai_proposals: bool | None = None

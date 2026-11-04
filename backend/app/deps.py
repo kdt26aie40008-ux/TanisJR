@@ -16,6 +16,7 @@ from app.training.data import TrainingDataRepository
 from app.training.runner import TrainingManager
 from app.config import Config
 from app.speech.stt import Transcriber
+from app.speech.engine import EngineLauncher
 from app.speech.tts import AivisClient
 from app.crypto import KeyStore, Vault
 from app.db import Database
@@ -43,6 +44,7 @@ class Services:
     ollama: OllamaClient
     stt: Transcriber
     tts: AivisClient
+    tts_engine: EngineLauncher
     avatars: AvatarStore
     google: GoogleClient
     calendar: CalendarService
