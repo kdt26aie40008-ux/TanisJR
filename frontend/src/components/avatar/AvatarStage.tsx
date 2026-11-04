@@ -12,11 +12,14 @@ interface Props {
   getLevel?: () => number
   emotion?: Emotion
   activity?: Activity
+  nod?: boolean
+  getListenLevel?: () => number
+  gaze?: boolean
   emptyMessage?: React.ReactNode
 }
 
 /** アバター表示領域。仮モデルの表示と、必要なクレジット表記を必ず添える。 */
-export function AvatarStage({ avatar, getLevel, emotion, activity, emptyMessage }: Props) {
+export function AvatarStage({ avatar, getLevel, emotion, activity, nod, getListenLevel, gaze, emptyMessage }: Props) {
   if (!avatar) {
     return (
       <div className="avatar-stage empty">
@@ -32,7 +35,15 @@ export function AvatarStage({ avatar, getLevel, emotion, activity, emptyMessage 
         </span>
       )}
       <Suspense fallback={<div className="avatar-overlay">3D表示を準備中…</div>}>
-        <AvatarViewer url={api.avatarFileUrl(avatar.id)} getLevel={getLevel} emotion={emotion} activity={activity} />
+        <AvatarViewer
+          url={api.avatarFileUrl(avatar.id)}
+          getLevel={getLevel}
+          emotion={emotion}
+          activity={activity}
+          nod={nod}
+          getListenLevel={getListenLevel}
+          gaze={gaze}
+        />
       </Suspense>
       {(avatar.meta.credit_required || avatar.meta.authors) && (
         <p className="avatar-credit">

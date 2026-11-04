@@ -53,8 +53,8 @@ export function ModelStatusBanner({ kind = 'chat' }: Props) {
   return (
     <div className="banner warn" role="status">
       {kind === 'chat'
-        ? `モデル「${model}」がインストールされていません。`
-        : `記憶検索用モデル「${model}」がインストールされていないため、記憶は会話に反映されません。`}
+        ? `会話に使うモデル「${model}」がまだ入っていません。`
+        : `思い出を探すためのモデル「${model}」がまだ入っていないため、思い出は会話に使われません。`}
       {catalogEntry ? (
         <button className="btn small" onClick={() => setDialogOpen(true)}>
           ダウンロード（約{catalogEntry.size_gb}GB）

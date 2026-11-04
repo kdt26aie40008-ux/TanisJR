@@ -44,6 +44,18 @@ class ProfileRepository:
                 return None
         return next(e for e in self.list() if e.key == key)
 
+    def upsert(self, key: str, question: str, content: str) -> ProfileEntry:
+        """設定「あなたのこと」の項目。まだ無ければ追加し、あれば更新する。"""
+        if self.update_content(key, content) is None:
+            with self.db.transaction() as conn:
+                ts = now_iso()
+                conn.execute(
+                    "INSERT INTO profile_entries (key, question, content, source, importance, confirmation_status, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, 'confirmed', ?, ?)",
+                    (key, question, self.vault.encrypt(content), SOURCE_USER_EDIT, EXPLICIT_IMPORTANCE, ts, ts),
+                )
+        return next(e for e in self.list() if e.key == key)
+
     def encrypt_legacy_rows(self) -> int:
         """Phase 1 で平文保存された回答を暗号化し直す。"""
         with self.db.transaction() as conn:

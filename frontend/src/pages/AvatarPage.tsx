@@ -69,7 +69,7 @@ export function AvatarPage() {
 
   return (
     <section className="page avatar-page">
-      <h1>3Dアバター</h1>
+      <h1>すがた</h1>
       {(error || loadError) && (
         <div className="banner error" role="alert">
           {error || loadError}

@@ -26,6 +26,7 @@ import type {
   ProfileEntry,
   PullEvent,
   SetupQuestionsResponse,
+  WakeStatus,
 } from './types'
 
 /** 画面に表示できる日本語メッセージを持つエラー。 */
@@ -155,11 +156,15 @@ export const api = {
 
   // ----- 音声 -----
   sttStatus: () => json<SttStatus>('/api/speech/stt/status'),
+  proactiveNext: (idleMinutes: number | null) =>
+    json<{ kind: 'morning' | 'event' | 'idle' | null; text?: string }>('/api/proactive/next', body({ idle_minutes: idleMinutes })),
+  wakeStatus: () => json<WakeStatus>('/api/wake/status'),
+  setWake: (enabled: boolean, consent = false) => json<WakeStatus>('/api/wake', body({ enabled, consent })),
   warmupStt: () => json<{ started: boolean }>('/api/speech/stt/warmup', { method: 'POST' }),
   downloadWhisper: (model: string) =>
     json<{ started: boolean }>('/api/speech/stt/models/download', body({ model, confirmed: true })),
-  transcribe: (audio: Blob) =>
-    json<Transcript>('/api/speech/stt', {
+  transcribe: (audio: Blob, options: { fast?: boolean } = {}) =>
+    json<Transcript>(options.fast ? '/api/speech/stt?fast=true' : '/api/speech/stt', {
       method: 'POST',
       body: audio,
       headers: { 'Content-Type': audio.type || 'application/octet-stream' },

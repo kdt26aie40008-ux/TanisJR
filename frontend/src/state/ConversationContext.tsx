@@ -36,6 +36,8 @@ interface ConversationValue {
   toggleSave: (enabled: boolean) => Promise<void>
   open: (conversation: ConversationDetail) => void
   setNotice: (message: string) => void
+  /** AI から話しかけた言葉を会話に加える（サーバーへは送らない。次の送信から会話の流れとして渡る） */
+  say: (text: string) => void
 }
 
 const ConversationContext = createContext<ConversationValue | null>(null)
@@ -84,7 +86,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     if (!enabled) {
       setSaveEnabled(false)
       setConversationId(null)
-      if (currentId) setNotice('ここから先の会話は保存されません。保存済みの部分は「記憶管理 › 会話履歴」から削除できます。')
+      if (currentId) setNotice('ここから先の会話は保存されません。保存済みの部分は「思い出 › 会話履歴」から削除できます。')
       return
     }
     setSaveEnabled(true)
@@ -163,6 +165,11 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
 
   const stop = useCallback(() => abortRef.current?.abort(), [])
 
+  const say = useCallback((text: string) => {
+    if (stateRef.current.streaming || !text.trim()) return
+    setMessages((prev) => [...prev, { id: nextId++, role: 'assistant', content: text.trim() }])
+  }, [])
+
   const clear = useCallback(() => {
     abortRef.current?.abort()
     setMessages([])
@@ -196,8 +203,9 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       toggleSave,
       open,
       setNotice,
+      say,
     }),
-    [messages, streaming, notice, error, saveEnabled, conversationId, savingToggle, send, stop, clear, toggleSave, open],
+    [messages, streaming, notice, error, saveEnabled, conversationId, savingToggle, send, stop, clear, toggleSave, open, say],
   )
   return <ConversationContext.Provider value={value}>{children}</ConversationContext.Provider>
 }

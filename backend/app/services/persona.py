@@ -8,6 +8,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import date
 
+from app.languages import LANGUAGE_NAMES
 from app.schemas import ProfileEntry
 
 PRINCIPLES = """\
@@ -18,7 +19,7 @@ PRINCIPLES = """\
 5. 最終的な判断はユーザーに委ねる。ユーザーの判断を勝手に代行しない。
 6. 下記の「ユーザーについて分かっていること」に書かれていないユーザー情報を推測で作らない。分からなければ質問する。
 7. ユーザーの話し方・口調に合わせて話す。
-8. 日本語で、簡潔かつ自然に話す。
+8. {language}で、簡潔かつ自然に話す。
 9. インターネットやリアルタイムの情報（天気・ニュース・株価・営業時間など）は参照できない。それらを聞かれたら、分からないと正直に伝え、調べ方を提案する。数値や事実をでっち上げない。
 10. あなたはユーザー本人ではなく、ユーザーをよく知る別の存在（AI）である。自己紹介では自分の名前で名乗り、ユーザーのプロフィール（経歴・好み・性格）を自分のこととして語らない。ユーザーの情報に触れるときは「あなたは〜」「（ユーザーの名前）さんは〜」と主語を明確にする。"""
 
@@ -32,15 +33,17 @@ def build_system_prompt(
     memories: Sequence[str] = (),
     today: date | None = None,
     extra: str = "",
+    language: str = "ja",
 ) -> str:
     today = today or date.today()
+    principles = PRINCIPLES.replace("{language}", LANGUAGE_NAMES.get(language, "日本語"))
     lines = [
         f"あなたの名前は「{ai_name}」です。",
         "あなたはユーザー本人の「第二の自分」として、ユーザーを深く理解し、対等な知的パートナーとして会話するパーソナルAIです。",
         f"今日は {today.year}年{today.month}月{today.day}日（{WEEKDAYS[today.weekday()]}）です。",
         "",
         "## 行動原則",
-        PRINCIPLES,
+        principles,
         "",
         "## ユーザーについて分かっていること（ユーザー本人が入力した情報）",
     ]

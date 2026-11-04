@@ -76,7 +76,9 @@ async def chat(body: ChatRequest, services: Services = Depends(get_services)) ->
             use_calendar = False
             calendar_notice = f"カレンダーを読み込めませんでした: {exc.message}"
 
-    system_prompt = build_system_prompt(settings.ai_name, profile, memory_lines, extra=calendar_extra)
+    system_prompt = build_system_prompt(
+        settings.ai_name, profile, memory_lines, extra=calendar_extra, language=settings.language
+    )
     turn = _Turn()
 
     async def calendar_proposal() -> dict[str, Any] | None:

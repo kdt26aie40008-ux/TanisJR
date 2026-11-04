@@ -18,7 +18,7 @@ export function MessageList({ aiName, messages, streaming, onSpeak }: Props) {
           <div className="message-author">{m.role === 'user' ? 'あなた' : aiName}</div>
           {m.thinking && (
             <details className="thinking">
-              <summary>思考過程</summary>
+              <summary>考えたこと</summary>
               <pre>{m.thinking}</pre>
             </details>
           )}
@@ -27,13 +27,13 @@ export function MessageList({ aiName, messages, streaming, onSpeak }: Props) {
           </div>
           {m.role === 'assistant' && m.content && onSpeak && (
             <button className="btn small speak-btn" onClick={() => onSpeak(m.content)} aria-label="この発言を読み上げる">
-              ▶ 読み上げ
+              もう一度聞く
             </button>
           )}
           {m.proposals?.map((op) => <OperationCard key={op.id} operation={op} />)}
           {m.memories && m.memories.length > 0 && (
             <details className="used-memories">
-              <summary>参照した記憶（{m.memories.length}）</summary>
+              <summary>思い出したこと（{m.memories.length}）</summary>
               <ul>
                 {m.memories.map((mem) => (
                   <li key={mem.id}>

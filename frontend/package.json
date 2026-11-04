@@ -10,7 +10,9 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@fontsource/zen-maru-gothic": "5.3.1",
     "@pixiv/three-vrm": "^3.5.5",
+    "lucide-react": "1.68.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "three": "^0.187.0"

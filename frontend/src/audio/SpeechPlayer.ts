@@ -9,6 +9,7 @@ export class SpeechPlayer {
   private analyser: AnalyserNode | null = null
   private samples = new Float32Array(1024)
   private chain: Promise<void> = Promise.resolve()
+  private synthChain: Promise<void> = Promise.resolve()
   private generation = 0
   private pending = 0
   private current: AudioBufferSourceNode | null = null
@@ -16,6 +17,8 @@ export class SpeechPlayer {
 
   onSpeakingChange?: (speaking: boolean) => void
   onError?: (message: string) => void
+  /** 1つの文の再生を始める直前に呼ばれる（文ごとに表情を変えるため） */
+  onChunkStart?: (text: string) => void
 
   private context(): AudioContext {
     if (!this.ctx) {
@@ -29,6 +32,8 @@ export class SpeechPlayer {
 
   /** ブラウザーの自動再生制限を解除する（ボタン操作などの直後に呼ぶ） */
   unlock(): void {
+    // 音声に対応していない環境（テスト環境など）では何もしない
+    if (typeof AudioContext === 'undefined') return
     void this.context().resume()
   }
 
@@ -36,8 +41,15 @@ export class SpeechPlayer {
     const generation = this.generation
     const ctx = this.context()
     const signal = this.controller.signal
-    // 合成は先に始めておき、再生だけ順番に行う
-    const audio = api.synthesize(text, speaker, signal).then((buf) => ctx.decodeAudioData(buf))
+    // 合成は再生より先に進めておくが、同時には1件ずつ行う。
+    // 一度に全部頼むとエンジンが分散して処理し、最初の1文が出るまでが遅くなるため。
+    const audio = this.synthChain
+      .then(() => (generation === this.generation ? api.synthesize(text, speaker, signal) : Promise.reject(new Error('stopped'))))
+      .then((buf) => ctx.decodeAudioData(buf))
+    this.synthChain = audio.then(
+      () => undefined,
+      () => undefined,
+    )
     audio.catch(() => undefined)
     this.setPending(this.pending + 1)
     this.chain = this.chain
@@ -51,6 +63,7 @@ export class SpeechPlayer {
           return
         }
         if (generation !== this.generation) return
+        this.onChunkStart?.(text)
         await this.play(buffer)
       })
       .finally(() => {
@@ -84,6 +97,7 @@ export class SpeechPlayer {
     }
     this.current = null
     this.chain = Promise.resolve()
+    this.synthChain = Promise.resolve()
     this.setPending(0)
   }
 

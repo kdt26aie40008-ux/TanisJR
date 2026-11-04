@@ -36,7 +36,7 @@ from app.calendar.google import GoogleClient, GoogleError
 from app.calendar.service import CalendarError, CalendarService
 from app.notify.scheduler import NotificationScheduler
 from app.notify.toast import Notifier, WindowsToastNotifier
-from app.routers import avatars, chat, data, health, models, settings, setup, speech
+from app.routers import assistant, avatars, chat, data, health, models, settings, setup, speech
 from app.routers import calendar as calendar_router
 from app.routers import system as system_router
 from app.routers import training as training_router
@@ -207,7 +207,8 @@ def create_app(
         )
 
     for module in (
-        health, setup, chat, settings, models, memories_router, data, speech, avatars, calendar_router, system_router, training_router
+        health, setup, chat, settings, models, memories_router, data, speech, avatars, calendar_router, system_router, training_router,
+        assistant,
     ):
         app.include_router(module.router)
 
@@ -253,6 +254,11 @@ def _mount_frontend(app: FastAPI, dist: Path) -> None:
         candidate = (root / path).resolve()
         # ディレクトリトラバーサル対策: dist 配下のファイルのみ返す
         if path and candidate.is_file() and candidate.is_relative_to(root):
+            # PWA: マニフェストの種類を明示し、サービスワーカーは更新がすぐ届くようキャッシュさせない
+            if candidate.suffix == ".webmanifest":
+                return FileResponse(candidate, media_type="application/manifest+json")
+            if path == "sw.js":
+                return FileResponse(candidate, media_type="text/javascript", headers={"Cache-Control": "no-cache"})
             return FileResponse(candidate)
         return FileResponse(index, headers={"Cache-Control": "no-store"})
 

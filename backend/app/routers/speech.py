@@ -76,14 +76,19 @@ async def warmup(background: BackgroundTasks, services: Services = Depends(get_s
 
 
 @router.post("/stt")
-async def transcribe(request: Request, services: Services = Depends(get_services)) -> dict:
-    """録音した音声（webm/opus, wav 等）を受け取り、文字に起こす。音声は保存しない。"""
+async def transcribe(request: Request, fast: bool = False, services: Services = Depends(get_services)) -> dict:
+    """録音した音声（webm/opus, wav 等）を受け取り、文字に起こす。音声は保存しない。
+
+    fast=true は呼びかけ（「ねえ○○」）の検出用で、精度より速さを優先する。
+    """
     audio = await read_limited(request, MAX_AUDIO_BYTES)
     if not audio:
         raise AppError(400, "empty_audio", "音声が空です。もう一度録音してください。")
     settings = services.settings.get()
     try:
-        result = await services.stt.transcribe(audio, settings.stt_model, settings.stt_device)
+        result = await services.stt.transcribe(
+            audio, settings.stt_model, settings.stt_device, language=settings.language, fast=fast
+        )
     except SttError as exc:
         raise _stt_error(exc) from exc
     return {
