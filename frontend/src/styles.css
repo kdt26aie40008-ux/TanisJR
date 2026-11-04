@@ -757,6 +757,10 @@ textarea {
 .settings-page h1 {
   margin-bottom: 0;
 }
+.google-login {
+  padding: 0.6em 1.6em;
+  font-size: 1rem;
+}
 .behavior-list {
   list-style: none;
   margin: 0.4em 0 0;

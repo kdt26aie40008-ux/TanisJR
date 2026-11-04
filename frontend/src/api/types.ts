@@ -80,6 +80,8 @@ export interface WakeStatus {
 
 export interface CalendarStatus {
   configured: boolean
+  /** bundled: アプリに同梱された登録（ログインするだけで連携できる）/ own: この PC で自分で登録したもの */
+  source: 'bundled' | 'own' | null
   connected: boolean
   client_id_hint: string | null
   redirect_uri: string

@@ -210,10 +210,35 @@ function ConnectionPanel({
             </button>
           </div>
         </>
+      ) : status.source === 'bundled' ? (
+        <>
+          <p>Google アカウントでログインすると、予定を見たり、会話から予定を追加したりできるようになります。</p>
+          <div className="actions wrap">
+            <button className="btn primary google-login" onClick={() => void connect()}>
+              Google でログインして連携
+            </button>
+          </div>
+          {waiting && (
+            <p className="hint" role="status">
+              開いたタブでログインと許可が終わるのを待っています…
+            </p>
+          )}
+          <p className="hint">
+            使うのは「予定の表示と編集」の権限だけです。予定の追加・変更・削除は、このアプリで「承認して実行」を押したときだけ行われます。
+            ログイン情報（トークン）は暗号化して、この PC にだけ保存されます。
+            「このアプリは Google で確認されていません」と表示された場合は、「詳細」→「（アプリ名）に移動」で進めます。
+          </p>
+        </>
       ) : !status.configured ? (
         <>
           <p>
-            Google カレンダーを使うには、あなたの Google アカウントで「OAuth クライアント」を1度だけ作成し、その JSON ファイルを登録します。
+            このアプリにはまだ Google の登録ファイルが入っていません。管理者がファイルを置けば、Google でログインするだけで連携できるようになります（
+            <code>docs/GOOGLE_CALENDAR.md</code>）。
+          </p>
+          <details className="advanced">
+            <summary>自分で登録して使う</summary>
+          <p>
+            あなたの Google アカウントで「OAuth クライアント」を1度だけ作成し、その JSON ファイルを登録します。
           </p>
           <ol className="guide">
             <li>
@@ -246,6 +271,7 @@ function ConnectionPanel({
               }}
             />
           </label>
+          </details>
         </>
       ) : (
         <>

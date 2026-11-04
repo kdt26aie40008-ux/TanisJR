@@ -10,6 +10,8 @@ data/
 !.env.example
 credentials*.json
 client_secret*.json
+# Google の OAuth クライアント（docs/GOOGLE_CALENDAR.md）。チームで共有する方法を決めてから扱う
+config/google-oauth-client.json
 token*.json
 backups/
 *.twinbak

@@ -10,6 +10,8 @@ from urllib.parse import urlparse
 REPO_ROOT = Path(__file__).resolve().parents[2]
 # 以前のバージョンの保存先（プロジェクトフォルダー内）。このPCのデータなら起動時に新しい保存先へ移す
 LEGACY_DATA_DIR = REPO_ROOT / "data"
+# 管理者が Google Cloud で作った OAuth クライアントの置き場所（docs/GOOGLE_CALENDAR.md）
+DEFAULT_GOOGLE_CLIENT = REPO_ROOT / "config" / "google-oauth-client.json"
 
 
 def default_data_dir() -> Path:
@@ -39,6 +41,9 @@ class Config:
     allowed_hosts: tuple[str, ...] = ("127.0.0.1", "localhost")
     # 状態変更リクエストを許可するオリジン（本番 + Vite 開発サーバー）
     allowed_origins: tuple[str, ...] = field(default_factory=tuple)
+    # アプリに同梱する Google の OAuth クライアント（デスクトップアプリ用 JSON）。
+    # 置いてあれば、使う人は「Google でログイン」だけでカレンダーと連携できる
+    google_client_file: Path | None = None
 
     @property
     def db_path(self) -> Path:
@@ -68,4 +73,5 @@ def load_config() -> Config:
         aivis_url=validate_local_url(os.environ.get("TWIN_AIVIS_URL", "http://127.0.0.1:10101")),
         models_dir=Path(os.environ.get("TWIN_MODELS_DIR", REPO_ROOT / "models")).resolve(),
         allowed_origins=origins,
+        google_client_file=Path(os.environ.get("TWIN_GOOGLE_CLIENT", DEFAULT_GOOGLE_CLIENT)).resolve(),
     )
