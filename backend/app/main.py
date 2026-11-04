@@ -105,7 +105,7 @@ def create_app(
     ollama = OllamaClient(config.ollama_url, transport=ollama_transport)
     index = VectorIndex(config.data_dir / "chroma")
     google = GoogleClient(transport=google_transport)
-    calendar = CalendarService(db, vault, settings_repo, google)
+    calendar = CalendarService(db, vault, settings_repo, google, config.google_client_file)
     notifier = notifier or WindowsToastNotifier()
     training_data = TrainingDataRepository(db, vault, conversations)
     tts = AivisClient(config.aivis_url, transport=aivis_transport)

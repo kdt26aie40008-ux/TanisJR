@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { jsonResponse, mockFetch } from '../test/fetchMock'
 import { CalendarPage } from './CalendarPage'
 
-const BASE_STATUS = { configured: false, connected: false, client_id_hint: null, redirect_uri: 'http://127.0.0.1:8765/api/calendar/auth/callback', last_sync_at: null, last_error: null }
+const BASE_STATUS = { configured: false, source: null, connected: false, client_id_hint: null, redirect_uri: 'http://127.0.0.1:8765/api/calendar/auth/callback', last_sync_at: null, last_error: null }
 const SETTINGS = { notifications_enabled: true, default_reminder_minutes: 10, calendar_ai_proposals: true }
 const SYSTEM = { pid: 1, uptime_seconds: 60, background: false, autostart: false, notifications_enabled: true }
 
@@ -47,6 +47,25 @@ describe('CalendarPage', () => {
     const post = calls.find((c) => c.url === '/api/calendar/operations')!
     expect(JSON.parse(String(post.init!.body)).action).toBe('create')
     expect(calls.some((c) => c.url.includes('/approve'))).toBe(false)
+  })
+
+  it('only asks to log in when the app ships a Google registration', async () => {
+    const user = userEvent.setup()
+    const opened: string[] = []
+    window.open = ((url: string) => {
+      opened.push(url)
+      return null
+    }) as typeof window.open
+    mockFetch(
+      routes({ ...BASE_STATUS, configured: true, source: 'bundled' }, {
+        'POST /api/calendar/auth/start': () => jsonResponse({ url: 'https://accounts.google.com/o/oauth2/v2/auth?x=1' }),
+      }),
+    )
+    render(<CalendarPage />)
+    await user.click(await screen.findByRole('button', { name: 'Google でログインして連携' }))
+    expect(opened).toEqual(['https://accounts.google.com/o/oauth2/v2/auth?x=1'])
+    // JSON ファイルの登録は求めない
+    expect(screen.queryByLabelText('OAuth クライアントの JSON ファイル')).toBeNull()
   })
 
   it('shows the autostart switch', async () => {

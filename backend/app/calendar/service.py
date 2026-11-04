@@ -12,9 +12,18 @@ import secrets
 import time
 import uuid
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
-from app.calendar.google import ClientConfig, GoogleAuthError, GoogleClient, GoogleError, Token, new_pkce
+from app.calendar.google import (
+    ClientConfig,
+    GoogleAuthError,
+    GoogleClient,
+    GoogleError,
+    Token,
+    new_pkce,
+    parse_client_json,
+)
 from app.calendar.models import CalendarEvent, EventDraft, Operation, OperationCreate, local_now
 from app.crypto import Vault
 from app.db import Database, now_iso
@@ -41,11 +50,20 @@ def not_connected() -> CalendarError:
 
 
 class CalendarService:
-    def __init__(self, db: Database, vault: Vault, settings: SettingsRepository, google: GoogleClient) -> None:
+    def __init__(
+        self,
+        db: Database,
+        vault: Vault,
+        settings: SettingsRepository,
+        google: GoogleClient,
+        bundled_client: Path | None = None,
+    ) -> None:
         self.db = db
         self.vault = vault
         self.settings = settings
         self.google = google
+        # アプリに同梱された OAuth クライアント（あれば、使う人は Google でログインするだけで連携できる）
+        self.bundled_client = bundled_client
         # state -> (PKCE verifier, redirect_uri, 作成時刻)。メモリ上のみ（再起動で無効になる）
         self._pending: dict[str, tuple[str, str, float]] = {}
 
@@ -58,9 +76,24 @@ class CalendarService:
     def _save_secret(self, key: str, value: str | None) -> None:
         self.settings.set_raw(key, self.vault.encrypt(value) if value is not None else None)
 
-    def client(self) -> ClientConfig | None:
+    def own_client(self) -> ClientConfig | None:
+        """この PC で利用者が自分で登録した OAuth クライアント。"""
         raw = self._load_secret(CLIENT_KEY)
         return ClientConfig(**json.loads(raw)) if raw else None
+
+    def bundled(self) -> ClientConfig | None:
+        """アプリに同梱された OAuth クライアント。壊れていれば使わない（ログには種類だけ残す）。"""
+        if self.bundled_client is None or not self.bundled_client.is_file():
+            return None
+        try:
+            return parse_client_json(self.bundled_client.read_bytes())
+        except (OSError, GoogleError) as exc:
+            logger.warning("Bundled Google client is unusable: %s", type(exc).__name__)
+            return None
+
+    def client(self) -> ClientConfig | None:
+        # 自分で登録したクライアントがあればそれを優先し、なければ同梱のものを使う
+        return self.own_client() or self.bundled()
 
     def save_client(self, config: ClientConfig) -> None:
         self._save_secret(CLIENT_KEY, json.dumps({"client_id": config.client_id, "client_secret": config.client_secret}))
@@ -72,9 +105,12 @@ class CalendarService:
         return Token.from_json(raw) if raw else None
 
     def status(self) -> dict[str, Any]:
-        client = self.client()
+        own = self.own_client()
+        client = own or self.bundled()
         return {
             "configured": client is not None,
+            # bundled: アプリに同梱された登録を使っている（使う人はログインするだけ）
+            "source": None if client is None else ("own" if own else "bundled"),
             # クライアントIDの先頭だけ表示する（どのクライアントか確認できる程度）
             "client_id_hint": (client.client_id[:12] + "…") if client else None,
             "connected": self._token() is not None,
