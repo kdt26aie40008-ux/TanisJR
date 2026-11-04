@@ -44,6 +44,7 @@ from app.routers import memories as memories_router
 from app.security import OriginCheckMiddleware
 from app.services.data_protection import unlock
 from app.services.memory import MemoryService
+from app.speech.engine import EngineLauncher
 from app.speech.stt import Transcriber, WhisperService
 from app.speech.tts import AivisClient
 from app.vector_index import VectorIndex
@@ -90,6 +91,7 @@ def create_app(
     start_scheduler: bool = True,
     allow_process_control: bool = True,
     background: bool = False,
+    aivis_engine_path: Path | None = None,
 ) -> FastAPI:
     config = config or load_config()
     db = Database(config.db_path)
@@ -104,6 +106,7 @@ def create_app(
     calendar = CalendarService(db, vault, settings_repo, google)
     notifier = notifier or WindowsToastNotifier()
     training_data = TrainingDataRepository(db, vault, conversations)
+    tts = AivisClient(config.aivis_url, transport=aivis_transport)
     services = Services(
         config=config,
         db=db,
@@ -117,7 +120,8 @@ def create_app(
         index=index,
         ollama=ollama,
         stt=transcriber or WhisperService(config.models_dir / "whisper"),
-        tts=AivisClient(config.aivis_url, transport=aivis_transport),
+        tts=tts,
+        tts_engine=EngineLauncher(tts, config.aivis_url, aivis_engine_path),
         avatars=AvatarStore(db, config.data_dir / "avatars"),
         google=google,
         calendar=calendar,
@@ -147,6 +151,10 @@ def create_app(
             if start_scheduler and services.scheduler:
                 # 予定の通知（再起動後も DB の状態から再開する）
                 tasks.append(asyncio.create_task(services.scheduler.run_forever()))
+            settings_now = services.settings.get()
+            if start_scheduler and settings_now.tts_engine_autostart and settings_now.tts_speaker is not None:
+                # 読み上げを使う設定なら、AivisSpeech のアプリを開かなくてもエンジンを起動しておく
+                services.tts_engine.ensure_started()
         yield
         for task in tasks:
             task.cancel()

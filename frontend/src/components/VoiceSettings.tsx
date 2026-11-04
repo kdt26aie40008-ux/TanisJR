@@ -255,6 +255,14 @@ function TtsSettings({ settings, update }: Props) {
         <input type="checkbox" checked={settings.tts_auto_read} onChange={(e) => update('tts_auto_read', e.target.checked)} />
         音声会話でAIの返答を自動で読み上げる
       </label>
+      <label className="checkbox">
+        <input
+          type="checkbox"
+          checked={settings.tts_engine_autostart}
+          onChange={(e) => update('tts_engine_autostart', e.target.checked)}
+        />
+        AivisSpeech のアプリを開かなくても、読み上げエンジンを自動で起動する（画面は表示されません）
+      </label>
       {error && (
         <p className="error-text" role="alert">
           {error}

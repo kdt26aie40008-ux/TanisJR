@@ -293,6 +293,8 @@ def make_client(
             startup_dir=tmp_path / "startup",
             start_scheduler=False,
             allow_process_control=False,
+            # 実際の AivisSpeech を起動しないよう、存在しないパスを渡す
+            aivis_engine_path=tmp_path / "no-aivis" / "run.exe",
         )
         c = TestClient(app, headers={"Origin": ORIGIN})
         c.__enter__()

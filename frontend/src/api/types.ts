@@ -33,6 +33,7 @@ export interface AppSettings {
   tts_speaker: number | null
   tts_speed: number
   tts_auto_read: boolean
+  tts_engine_autostart: boolean
   tts_acknowledged_speakers: string[]
   avatar_id: string
   notifications_enabled: boolean

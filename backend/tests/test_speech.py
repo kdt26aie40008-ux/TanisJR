@@ -124,6 +124,43 @@ def test_speakers_when_engine_down(client: TestClient, fake_aivis: FakeAivis) ->
     assert "AivisSpeech" in data["message"]
 
 
+def test_engine_autostart_when_down(client: TestClient, fake_aivis: FakeAivis, tmp_path, monkeypatch) -> None:  # noqa: ANN001
+    """AivisSpeech のアプリが起動していなくても、エンジンだけを起動する。"""
+    engine = client.app.state.services.tts_engine
+    exe = tmp_path / "aivis" / "run.exe"
+    exe.parent.mkdir()
+    exe.write_bytes(b"")
+    engine.engine_path = exe
+    spawned: list[bool] = []
+
+    def fake_spawn() -> None:
+        spawned.append(True)
+        fake_aivis.available = True  # 起動したらエンジンが応答する
+
+    monkeypatch.setattr(engine, "_spawn", fake_spawn)
+    fake_aivis.available = False
+    data = client.get("/api/speech/tts/speakers").json()
+    assert data["available"] is False and "起動しています" in data["message"]
+    assert data["engine"]["installed"] is True
+    # バックグラウンドの起動が終わると、話者を取得できる
+    for _ in range(40):
+        if client.get("/api/speech/tts/speakers").json()["available"]:
+            break
+        import time
+
+        time.sleep(0.1)
+    assert spawned == [True]
+    assert client.get("/api/speech/tts/speakers").json()["available"] is True
+
+
+def test_engine_not_started_when_disabled(client: TestClient, fake_aivis: FakeAivis, tmp_path) -> None:  # noqa: ANN001
+    client.put("/api/settings", json={"tts_engine_autostart": False})
+    fake_aivis.available = False
+    data = client.get("/api/speech/tts/speakers").json()
+    assert "起動しています" not in data["message"]
+    assert client.app.state.services.tts_engine.starting is False
+
+
 def test_policy_excludes_images(client: TestClient) -> None:
     data = client.get(f"/api/speech/tts/speakers/{SPEAKER_UUID}/policy").json()
     assert "クレジット" in data["policy"]

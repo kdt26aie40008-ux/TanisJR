@@ -138,7 +138,12 @@ def train(run_dir: Path, status: Status) -> int:
             messages = [{"role": "system", "content": cfg["system_prompt"]}, {"role": "user", "content": prompt}]
             text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)
             ids = tokenizer(text, return_tensors="pt").to(m.device)
-            out = m.generate(**ids, max_new_tokens=160, do_sample=False, use_cache=True)
+            # 貪欲法だと同じ言い回しを繰り返しやすいため、Qwen3 の推奨に近い設定で生成する（比較のため乱数は固定）
+            torch.manual_seed(0)
+            out = m.generate(
+                **ids, max_new_tokens=160, do_sample=True, temperature=0.7, top_p=0.8, top_k=20,
+                repetition_penalty=1.05, use_cache=True,
+            )
             outputs.append(tokenizer.decode(out[0][ids["input_ids"].shape[1]:], skip_special_tokens=True).strip())
         m.train()
         return outputs
