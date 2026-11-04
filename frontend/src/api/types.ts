@@ -212,6 +212,8 @@ export interface Avatar {
   vrm_version: string
   meta: AvatarMeta
   created_at: string
+  /** リポジトリーに同梱された標準アバター（変更・削除不可） */
+  builtin: boolean
 }
 
 export interface Health {
