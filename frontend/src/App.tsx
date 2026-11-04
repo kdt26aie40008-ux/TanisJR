@@ -11,7 +11,6 @@ import { MemoryPage } from './pages/MemoryPage'
 import { RestorePage } from './pages/RestorePage'
 import { SettingsPage } from './pages/SettingsPage'
 import { SetupPage } from './pages/SetupPage'
-import { VoicePage } from './pages/VoicePage'
 import { ConversationProvider, useConversation } from './state/ConversationContext'
 
 type Boot =
@@ -105,13 +104,14 @@ function MainLayout({ aiName, onAiNameChange, onRestored }: LayoutProps) {
     refreshPending()
   }, [route, refreshPending])
 
+  // 旧「音声会話」画面（#/voice）は、おしゃべり画面に統合した
   const active = ROUTES.find((r) => r.id === route) ?? ROUTES[0]
   return (
-    <div className="layout">
+    <div className="layout" data-section={active.id}>
       <nav className="sidebar" aria-label="メインメニュー">
         <div className="brand">
           <span className="brand-mark" aria-hidden>
-            ◆
+            {Array.from(aiName)[0] ?? ''}
           </span>
           <span className="brand-name">{aiName}</span>
         </div>
@@ -122,8 +122,16 @@ function MainLayout({ aiName, onAiNameChange, onRestored }: LayoutProps) {
                 href={`#/${r.id}`}
                 className={`nav-link${r.id === active.id ? ' active' : ''}${r.plannedPhase ? ' planned' : ''}`}
                 aria-current={r.id === active.id ? 'page' : undefined}
+                style={{
+                  ['--nav-tint' as string]: `var(--${r.id}-tint)`,
+                  ['--nav-main' as string]: `var(--${r.id}-main)`,
+                  ['--nav-deep' as string]: `var(--${r.id}-deep)`,
+                }}
               >
-                {r.label}
+                <span className="nav-icon" aria-hidden>
+                  <r.icon size={18} strokeWidth={2.2} />
+                </span>
+                <span className="nav-label">{r.label}</span>
                 {r.plannedPhase && <span className="badge">準備中</span>}
                 {r.id === 'memory' && pendingCount > 0 && (
                   <span className="badge attention" aria-label={`承認待ち ${pendingCount}件`}>
@@ -136,12 +144,11 @@ function MainLayout({ aiName, onAiNameChange, onRestored }: LayoutProps) {
         </ul>
       </nav>
       <main className="content">
-        {/* チャットは常にマウントしておき、画面を切り替えても入力中の内容を保つ */}
+        {/* おしゃべりは常にマウントしておき、画面を切り替えても入力中の内容を保つ */}
         <div hidden={active.id !== 'chat'}>
-          <ChatPage aiName={aiName} />
+          <ChatPage aiName={aiName} visible={active.id === 'chat'} />
         </div>
         {active.plannedPhase && <ComingSoonPage route={active} />}
-        {active.id === 'voice' && <VoicePage aiName={aiName} />}
         {active.id === 'avatar' && <AvatarPage />}
         {active.id === 'calendar' && <CalendarPage />}
         {active.id === 'training' && <TrainingPage />}

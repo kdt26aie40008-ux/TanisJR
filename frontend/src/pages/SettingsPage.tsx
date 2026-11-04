@@ -2,6 +2,10 @@ import { useCallback, useEffect, useState } from 'react'
 import { api, errorMessage } from '../api/client'
 import type { AppSettings, CatalogModel, ModelStatus, ProfileEntry } from '../api/types'
 import { BackupCreate, BackupRestore } from '../components/BackupPanel'
+import { BehaviorSettings } from '../components/BehaviorSettings'
+import { InstallPanel } from '../components/InstallPanel'
+import { ProactiveSettings, WakeSettings } from '../components/AssistantSettings'
+import { SelfProfilePanel } from '../components/SelfProfilePanel'
 import { ModelDownloadDialog } from '../components/ModelDownloadDialog'
 import { VoiceSettings } from '../components/VoiceSettings'
 
@@ -61,35 +65,79 @@ export function SettingsPage({ onAiNameChange, onRestored }: Props) {
   const update = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) =>
     setSettings((prev) => (prev ? { ...prev, [key]: value } : prev))
 
-  const save = async () => {
-    setSaving(true)
-    setFeedback(null)
+  /** 設定を保存する。失敗したらメッセージを表示して false を返す */
+  const saveSettings = async (): Promise<boolean> => {
     try {
-      // アバターの選択と利用規約の確認状態は、それぞれ専用の操作でのみ変更する
-      const { avatar_id: _avatar, tts_acknowledged_speakers: _acks, ...values } = settings
+      // アバターの選択・利用規約の確認状態・呼びかけ機能のオンオフは、それぞれ専用の操作でのみ変更する
+      const { avatar_id: _avatar, tts_acknowledged_speakers: _acks, wake_enabled: _wake, ...values } = settings
       const saved = await api.updateSettings(values)
       setSettings(saved)
       onAiNameChange(saved.ai_name)
-      setFeedback({ kind: 'ok', text: '設定を保存しました。' })
+      return true
     } catch (err) {
       setFeedback({ kind: 'error', text: errorMessage(err) })
-    } finally {
-      setSaving(false)
+      return false
     }
+  }
+
+  const save = async () => {
+    setSaving(true)
+    setFeedback(null)
+    if (await saveSettings()) setFeedback({ kind: 'ok', text: '設定を保存しました。' })
+    setSaving(false)
   }
 
   return (
     <section className="page settings-page">
       <h1>設定</h1>
 
+      <SelfProfilePanel
+        settings={settings}
+        profile={profile}
+        update={update}
+        saveSettings={saveSettings}
+        onProfileSaved={(entries) =>
+          setProfile((prev) => [...prev.filter((p) => !entries.some((e) => e.key === p.key)), ...entries])
+        }
+      />
+
       <div className="panel">
-        <h2>基本設定</h2>
-        <label className="field">
-          <span>AIの名前</span>
-          <input value={settings.ai_name} maxLength={32} onChange={(e) => update('ai_name', e.target.value)} />
+        <h2>会話</h2>
+        <h3>思い出</h3>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={settings.save_conversations_default}
+            onChange={(e) => update('save_conversations_default', e.target.checked)}
+          />
+          新しい会話を最初から「保存する」にする
         </label>
+        <label className="checkbox">
+          <input type="checkbox" checked={settings.auto_extract} onChange={(e) => update('auto_extract', e.target.checked)} />
+          保存した会話から、あなたのことを自動で覚える（個人情報・性格・価値観は、あなたが承認してから覚えます）
+        </label>
+
+        <VoiceSettings settings={settings} update={update} />
+
+        <h3>ふるまい</h3>
+        <p className="hint">会話をより自然にするための動きです。1つずつオン・オフできます。</p>
+        <BehaviorSettings settings={settings} update={update} />
+
+        <h3>自分から話しかける</h3>
+        <ProactiveSettings settings={settings} update={update} />
+
+        <h3>「ねえ、{settings.ai_name}」で起きる</h3>
+        <WakeSettings
+          aiName={settings.ai_name}
+          enabled={settings.wake_enabled}
+          version={profile.map((p) => p.updated_at).join('|')}
+          onChange={(enabled) => setSettings((prev) => (prev ? { ...prev, wake_enabled: enabled } : prev))}
+        />
+
+        <details className="advanced">
+          <summary>詳しい設定</summary>
         <label className="field">
-          <span>使用モデル</span>
+          <span>会話に使うモデル</span>
           <select value={settings.model} onChange={(e) => update('model', e.target.value)}>
             {modelOptions.map((name) => (
               <option key={name} value={name}>
@@ -114,7 +162,7 @@ export function SettingsPage({ onAiNameChange, onRestored }: Props) {
         </label>
         <label className="field">
           <span>
-            応答の多様性（temperature）: <strong>{settings.temperature.toFixed(1)}</strong>
+            返事の自由さ（temperature）: <strong>{settings.temperature.toFixed(1)}</strong>
           </span>
           <input
             type="range"
@@ -126,7 +174,7 @@ export function SettingsPage({ onAiNameChange, onRestored }: Props) {
           />
         </label>
         <label className="field">
-          <span>会話の記憶範囲（コンテキスト長）</span>
+          <span>会話をさかのぼって覚えておく長さ（コンテキスト長）</span>
           <select value={settings.num_ctx} onChange={(e) => update('num_ctx', Number(e.target.value))}>
             <option value={2048}>2048（省メモリ）</option>
             <option value={4096}>4096（標準）</option>
@@ -135,24 +183,10 @@ export function SettingsPage({ onAiNameChange, onRestored }: Props) {
         </label>
         <label className="checkbox">
           <input type="checkbox" checked={settings.think} onChange={(e) => update('think', e.target.checked)} />
-          思考モード（回答前にじっくり考える。応答は遅くなります）
-        </label>
-
-        <h3>記憶</h3>
-        <label className="checkbox">
-          <input
-            type="checkbox"
-            checked={settings.save_conversations_default}
-            onChange={(e) => update('save_conversations_default', e.target.checked)}
-          />
-          新しい会話を最初から「保存する」にする
-        </label>
-        <label className="checkbox">
-          <input type="checkbox" checked={settings.auto_extract} onChange={(e) => update('auto_extract', e.target.checked)} />
-          保存した会話から記憶を自動で抽出する（個人情報・性格・価値観は承認後に保存）
+          じっくり考えるモード（返事の前によく考える。返事は遅くなります）
         </label>
         <label className="field">
-          <span>記憶検索用モデル（変更すると索引を作り直します）</span>
+          <span>思い出を探すためのモデル（変更すると索引を作り直します）</span>
           <select value={settings.embedding_model} onChange={(e) => update('embedding_model', e.target.value)}>
             {embeddingOptions.map((name) => (
               <option key={name} value={name}>
@@ -163,7 +197,7 @@ export function SettingsPage({ onAiNameChange, onRestored }: Props) {
           </select>
         </label>
         <label className="field">
-          <span>1回の応答で参照する記憶の最大数（0で参照しない）</span>
+          <span>1回の返事で思い出すことの最大数（0で思い出さない）</span>
           <input
             type="number"
             min={0}
@@ -175,7 +209,7 @@ export function SettingsPage({ onAiNameChange, onRestored }: Props) {
         <label className="field">
           <span>
             関連度のしきい値: <strong>{settings.rag_max_distance.toFixed(2)}</strong>
-            （小さいほど、関係が強い記憶だけを参照）
+            （小さいほど、話題に強く関係する思い出だけを使う）
           </span>
           <input
             type="range"
@@ -186,8 +220,8 @@ export function SettingsPage({ onAiNameChange, onRestored }: Props) {
             onChange={(e) => update('rag_max_distance', Number(e.target.value))}
           />
         </label>
+        </details>
 
-        <VoiceSettings settings={settings} update={update} />
         <div className="actions">
           <button className="btn primary" onClick={() => void save()} disabled={saving}>
             {saving ? '保存中…' : '保存'}
@@ -200,10 +234,12 @@ export function SettingsPage({ onAiNameChange, onRestored }: Props) {
         )}
       </div>
 
+      <InstallPanel />
+
       <div className="panel">
-        <h2>プロフィール</h2>
-        <p className="hint">初回設定で入力した内容です。AIはこの情報をもとにあなたを理解します。</p>
-        {profile.map((entry) => (
+        <h2>初回の質問への答え</h2>
+        <p className="hint">初回設定で答えてくれた内容です。{settings.ai_name} はこれもあなたを知る手がかりにします。</p>
+        {profile.filter((entry) => entry.key.startsWith('setup.')).map((entry) => (
           <ProfileEditor
             key={entry.key}
             entry={entry}
@@ -213,7 +249,8 @@ export function SettingsPage({ onAiNameChange, onRestored }: Props) {
       </div>
 
       <div className="panel">
-        <h2>モデル管理</h2>
+        <h2>ダウンロードしたモデル</h2>
+        <p className="hint">会話や思い出探しに使うデータです。すべてこの PC の中で動きます。</p>
         {!models ? (
           <p>確認中…</p>
         ) : !models.ollama_available ? (
@@ -236,7 +273,7 @@ export function SettingsPage({ onAiNameChange, onRestored }: Props) {
               {models.catalog.map((m) => (
                 <tr key={m.name}>
                   <td>{m.name}</td>
-                  <td>{m.kind === 'embedding' ? '記憶検索' : '会話'}</td>
+                  <td>{m.kind === 'embedding' ? '思い出探し' : '会話'}</td>
                   <td>約{m.size_gb}GB</td>
                   <td>{m.description}</td>
                   <td>
@@ -259,7 +296,7 @@ export function SettingsPage({ onAiNameChange, onRestored }: Props) {
       <div className="panel">
         <h2>データ保護</h2>
         <p className="hint">
-          保存データ（プロフィール・記憶・会話）は暗号化され、暗号鍵はこのPCのWindowsアカウントで保護されています。
+          保存データ（あなたのこと・思い出・会話）は暗号化され、暗号鍵はこのPCのWindowsアカウントで保護されています。
           PCの故障や買い替えに備えて、定期的にバックアップを作成してください。
         </p>
         <BackupCreate />

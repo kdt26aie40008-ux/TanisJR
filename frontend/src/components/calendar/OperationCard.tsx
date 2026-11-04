@@ -78,7 +78,7 @@ export function OperationCard({ operation, onChanged }: Props) {
     <div className={`operation-card panel status-${op.status}`} role="group" aria-label={ACTION_LABELS[op.action]}>
       <div className="memory-head">
         <strong>{ACTION_LABELS[op.action]}</strong>
-        <span className={`tag${op.source === 'ai' ? ' important' : ''}`}>{op.source === 'ai' ? 'AIの提案' : 'あなたの入力'}</span>
+        <span className={`tag${op.source === 'ai' ? ' important' : ''}`}>{op.source === 'ai' ? '会話からの提案' : 'あなたの入力'}</span>
         <span className="hint">{STATUS_LABELS[op.status]}</span>
       </div>
       {op.action === 'update' && op.target && (

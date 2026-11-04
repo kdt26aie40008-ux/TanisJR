@@ -93,7 +93,7 @@ def decode_audio(data: bytes, sampling_rate: int = 16000) -> Any:
 
 class Transcriber(Protocol):
     def status(self) -> dict[str, Any]: ...
-    async def transcribe(self, audio: bytes, model: str, device: str) -> Transcript: ...
+    async def transcribe(self, audio: bytes, model: str, device: str, language: str = "ja", fast: bool = False) -> Transcript: ...
     async def warmup(self, model: str, device: str) -> bool: ...
     def start_download(self, model: str) -> None: ...
 
@@ -197,14 +197,14 @@ class WhisperService:
         self._loaded = (model, device)
         return loaded, device, notice
 
-    def _transcribe_sync(self, audio: bytes, model: str, device: str) -> Transcript:
+    def _transcribe_sync(self, audio: bytes, model: str, device: str, language: str = "ja", fast: bool = False) -> Transcript:
         started = time.perf_counter()
         samples = decode_audio(audio)
         whisper, used_device, notice = self._load(model, device)
+        # fast: 呼びかけの検出用。精度より速さを優先する
+        options = {"language": language, "beam_size": 1 if fast else 5, "vad_filter": True, "condition_on_previous_text": False}
         try:
-            segments, info = whisper.transcribe(
-                samples, language="ja", beam_size=5, vad_filter=True, condition_on_previous_text=False
-            )
+            segments, info = whisper.transcribe(samples, **options)
             text = "".join(s.text for s in segments).strip()
         except RuntimeError as exc:
             if used_device != "cuda":
@@ -214,9 +214,7 @@ class WhisperService:
             self._loaded = None
             whisper, used_device, _ = self._load(model, "cpu")
             notice = "GPUで音声認識できなかったため、CPUで処理しました。"
-            segments, info = whisper.transcribe(
-                samples, language="ja", beam_size=5, vad_filter=True, condition_on_previous_text=False
-            )
+            segments, info = whisper.transcribe(samples, **options)
             text = "".join(s.text for s in segments).strip()
         return Transcript(
             text=text, duration=round(info.duration, 2), elapsed=round(time.perf_counter() - started, 2),
@@ -242,7 +240,9 @@ class WhisperService:
         async with self._lock:
             return await asyncio.to_thread(self._warmup_sync, model, device)
 
-    async def transcribe(self, audio: bytes, model: str, device: str) -> Transcript:
+    async def transcribe(
+        self, audio: bytes, model: str, device: str, language: str = "ja", fast: bool = False
+    ) -> Transcript:
         # モデルは1つだけ読み込み、同時実行しない（メモリ使用量を抑える）
         async with self._lock:
-            return await asyncio.to_thread(self._transcribe_sync, audio, model, device)
+            return await asyncio.to_thread(self._transcribe_sync, audio, model, device, language, fast)

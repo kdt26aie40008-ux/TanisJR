@@ -30,6 +30,23 @@ export interface AppSettings {
   stt_model: string
   stt_device: 'cpu' | 'cuda'
   stt_auto_send: boolean
+  voice_auto_stop: boolean
+  voice_silence_ms: number
+  voice_handsfree: boolean
+  behavior_nod: boolean
+  behavior_gaze: boolean
+  behavior_backchannel: boolean
+  behavior_barge_in: boolean
+  behavior_sentence_emotion: boolean
+  language: LanguageCode
+  proactive_enabled: boolean
+  proactive_morning: boolean
+  proactive_event_minutes: number
+  proactive_idle_hours: number
+  quiet_start: string
+  quiet_end: string
+  wake_enabled: boolean
+  wake_reading: string
   tts_speaker: number | null
   tts_speed: number
   tts_auto_read: boolean
@@ -39,6 +56,26 @@ export interface AppSettings {
   notifications_enabled: boolean
   default_reminder_minutes: number
   calendar_ai_proposals: boolean
+}
+
+export type LanguageCode = 'ja' | 'en' | 'zh' | 'ko' | 'es' | 'fr' | 'de'
+
+export const LANGUAGE_NAMES: Record<LanguageCode, string> = {
+  ja: '日本語',
+  en: '英語',
+  zh: '中国語',
+  ko: '韓国語',
+  es: 'スペイン語',
+  fr: 'フランス語',
+  de: 'ドイツ語',
+}
+
+export interface WakeStatus {
+  enabled: boolean
+  /** 「あなたのこと」がすべて入力されているか */
+  ready: boolean
+  /** まだ入力されていない項目 */
+  missing: string[]
 }
 
 export interface CalendarStatus {

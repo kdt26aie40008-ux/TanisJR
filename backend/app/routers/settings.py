@@ -4,7 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends
 
 from app.deps import Services, get_services
 from app.errors import AppError, setup_required
-from app.schemas import AppSettings, ProfileEntry, ProfileUpdate, SettingsUpdate
+from app.schemas import SELF_PROFILE_FIELDS, AppSettings, ProfileEntry, ProfileUpdate, SettingsUpdate
 
 router = APIRouter(prefix="/api", tags=["settings"])
 
@@ -38,6 +38,8 @@ def get_profile(services: Services = Depends(get_services)) -> list[ProfileEntry
 def update_profile(body: ProfileUpdate, services: Services = Depends(get_services)) -> ProfileEntry:
     if not services.settings.is_setup_completed():
         raise setup_required()
+    if body.key in SELF_PROFILE_FIELDS:
+        return services.profile.upsert(body.key, SELF_PROFILE_FIELDS[body.key], body.content)
     entry = services.profile.update_content(body.key, body.content)
     if entry is None:
         raise AppError(404, "profile_not_found", "指定されたプロフィール項目が見つかりません。")

@@ -64,7 +64,7 @@ export function CalendarPage() {
 
   return (
     <section className="page calendar-page">
-      <h1>カレンダー</h1>
+      <h1>予定</h1>
       {error && (
         <div className="banner error" role="alert">
           {error}

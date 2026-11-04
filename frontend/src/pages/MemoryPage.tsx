@@ -37,11 +37,11 @@ export function MemoryPage({ onChanged, onOpenConversation }: Props) {
 
   return (
     <section className="page memory-page">
-      <h1>記憶管理</h1>
+      <h1>思い出</h1>
       <ModelStatusBanner kind="embedding" />
       {stats && stats.unindexed > 0 && stats.embedding_available && (
         <div className="banner warn" role="status">
-          検索索引に未登録の記憶が {stats.unindexed} 件あります。
+          検索の索引に入っていない思い出が {stats.unindexed} 件あります。
           <button className="btn small" onClick={() => void reindex()}>
             索引を更新
           </button>
@@ -56,7 +56,7 @@ export function MemoryPage({ onChanged, onOpenConversation }: Props) {
       <div className="tabs" role="tablist">
         {(
           [
-            ['memories', `記憶${stats ? `（${stats.active}）` : ''}`],
+            ['memories', `思い出${stats ? `（${stats.active}）` : ''}`],
             ['pending', `承認待ち${stats ? `（${stats.pending}）` : ''}`],
             ['history', '会話履歴'],
           ] as [Tab, string][]
@@ -117,7 +117,7 @@ function MemoryList({ onChanged, onOpenConversation }: { onChanged: () => void; 
         }}
       >
         <label className="sr-only" htmlFor="memory-search">
-          記憶を検索
+          思い出を検索
         </label>
         <input id="memory-search" type="search" placeholder="キーワードで検索" value={query} onChange={(e) => setQuery(e.target.value)} />
         <label className="sr-only" htmlFor="memory-category">
@@ -142,7 +142,7 @@ function MemoryList({ onChanged, onOpenConversation }: { onChanged: () => void; 
           検索
         </button>
         <button type="button" className="btn primary" onClick={() => setAdding(true)}>
-          記憶を追加
+          思い出を追加
         </button>
       </form>
       {adding && (
@@ -163,7 +163,7 @@ function MemoryList({ onChanged, onOpenConversation }: { onChanged: () => void; 
         <p>読み込み中…</p>
       ) : items.length === 0 ? (
         <p className="empty">
-          {query || category ? '条件に合う記憶はありません。' : 'まだ記憶はありません。保存した会話から自動で蓄積されます。'}
+          {query || category ? '条件に合う思い出はありません。' : 'まだ思い出はありません。保存した会話から少しずつ増えていきます。'}
         </p>
       ) : (
         <ul className="memory-list">
@@ -274,7 +274,7 @@ function MemoryItem({
   }
 
   const remove = async () => {
-    if (!window.confirm(`この記憶を削除しますか？\n\n${memory.content}`)) return
+    if (!window.confirm(`この思い出を削除しますか？\n\n${memory.content}`)) return
     try {
       await api.deleteMemory(memory.id)
       onChanged()
@@ -557,9 +557,9 @@ function HistoryList({ onChanged, onOpenConversation }: { onChanged: () => void;
             <p>「{deleting.title}」を削除します。元に戻せません。</p>
             <label className="checkbox">
               <input type="checkbox" checked={alsoMemories} onChange={(e) => setAlsoMemories(e.target.checked)} />
-              この会話から抽出された記憶も削除する
+              この会話から覚えた思い出も削除する
             </label>
-            {!alsoMemories && <p className="hint">記憶は残り、出典は「会話（削除済み）」になります。</p>}
+            {!alsoMemories && <p className="hint">思い出は残り、出典は「会話（削除済み）」になります。</p>}
             <div className="actions">
               <button className="btn" onClick={() => setDeleting(null)}>
                 キャンセル

@@ -34,7 +34,7 @@ describe('OperationCard', () => {
       [`POST /api/calendar/operations/${OP.id}/approve`]: () => jsonResponse({ ...OP, status: 'done' }),
     })
     render(<OperationCard operation={OP} />)
-    expect(screen.getByText('AIの提案')).toBeInTheDocument()
+    expect(screen.getByText('会話からの提案')).toBeInTheDocument()
     expect(screen.getByText('歯医者')).toBeInTheDocument()
     expect(screen.getByText('11/3（火） 10:00〜11:00')).toBeInTheDocument()
     expect(calls).toHaveLength(0)

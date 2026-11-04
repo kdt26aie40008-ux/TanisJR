@@ -7,6 +7,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.languages import LanguageCode
+
 MAX_ANSWER_LEN = 4000
 MAX_MESSAGE_LEN = 8000
 MAX_MESSAGES = 100
@@ -110,6 +112,40 @@ class AppSettings(StrictModel):
     # GPU は LLM が使うため既定は CPU
     stt_device: Literal["cpu", "cuda"] = "cpu"
     stt_auto_send: bool = True
+    # 話し終わり（無音）を検出したら自動で録音を終える
+    voice_auto_stop: bool = True
+    # 何ミリ秒黙ったら話し終わりとみなすか
+    voice_silence_ms: int = Field(default=1200, ge=500, le=4000)
+    # 返事のあと、続けて聞き取りを始める（止めるまで声で会話を続ける）
+    voice_handsfree: bool = False
+    # 会話の言語（聞き取りと返事）。読み上げは日本語のみ対応
+    language: LanguageCode = "ja"
+    # --- ふるまい（会話の自然さ） ---
+    # 聞いている間うなずく
+    behavior_nod: bool = True
+    # 目線をこちら（画面の前の人・マウスの位置）に向ける
+    behavior_gaze: bool = True
+    # 話し終わったら短い相づちを返す
+    behavior_backchannel: bool = True
+    # AI が話している途中でも、話しかけたら止まって聞く（マイクの音を拾うのでヘッドホン推奨のため既定はオフ）
+    behavior_barge_in: bool = False
+    # 文ごとに表情を変える
+    behavior_sentence_emotion: bool = True
+    # --- 自分から話しかける（アプリを開いている間のみ） ---
+    proactive_enabled: bool = False
+    # 朝、その日はじめて開いたときにあいさつする
+    proactive_morning: bool = True
+    # 予定の何分前に声をかけるか（0 で声をかけない）
+    proactive_event_minutes: int = Field(default=15, ge=0, le=120)
+    # 何時間話していなかったら声をかけるか（0 で声をかけない）
+    proactive_idle_hours: int = Field(default=3, ge=0, le=24)
+    # 話しかけない時間帯（開始・終了。日付をまたいでよい）
+    quiet_start: str = Field(default="23:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    quiet_end: str = Field(default="07:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    # --- 「ねえ○○」で起きる（専用の操作でのみ有効にする。同意と「あなたのこと」の入力が必要） ---
+    wake_enabled: bool = False
+    # AI の名前の読み（ひらがな・カタカナ）。漢字の名前を聞き取りやすくするため
+    wake_reading: str = Field(default="", max_length=32)
     tts_speaker: int | None = Field(default=None, ge=0)
     tts_speed: float = Field(default=1.0, ge=0.5, le=2.0)
     tts_auto_read: bool = True
@@ -151,6 +187,22 @@ class SettingsUpdate(StrictModel):
     stt_model: SttModelName | None = None
     stt_device: Literal["cpu", "cuda"] | None = None
     stt_auto_send: bool | None = None
+    voice_auto_stop: bool | None = None
+    voice_silence_ms: int | None = Field(default=None, ge=500, le=4000)
+    voice_handsfree: bool | None = None
+    language: LanguageCode | None = None
+    behavior_nod: bool | None = None
+    behavior_gaze: bool | None = None
+    behavior_backchannel: bool | None = None
+    behavior_barge_in: bool | None = None
+    behavior_sentence_emotion: bool | None = None
+    proactive_enabled: bool | None = None
+    proactive_morning: bool | None = None
+    proactive_event_minutes: int | None = Field(default=None, ge=0, le=120)
+    proactive_idle_hours: int | None = Field(default=None, ge=0, le=24)
+    quiet_start: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    quiet_end: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    wake_reading: str | None = Field(default=None, max_length=32)
     tts_speaker: int | None = Field(default=None, ge=0)
     tts_speed: float | None = Field(default=None, ge=0.5, le=2.0)
     tts_auto_read: bool | None = None
@@ -187,6 +239,14 @@ class ProfileUpdate(StrictModel):
         if not value:
             raise ValueError("内容を入力してください。")
         return value
+
+
+# 設定「あなたのこと」で本人が入力する項目（初回の3問とは別。初回の3問は変更しない）
+SELF_PROFILE_FIELDS: dict[str, str] = {
+    "self.user_name": "呼んでほしい名前",
+    "self.personality": "あなたの個性（性格・価値観・好き嫌い）",
+    "self.traits": "あなたの特徴（口ぐせ・話し方・生活のリズムなど）",
+}
 
 
 # ===== 記憶・会話 (Phase 2) =====

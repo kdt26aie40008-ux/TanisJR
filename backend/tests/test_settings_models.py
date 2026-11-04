@@ -18,8 +18,31 @@ def test_update_settings_partial(setup_done: TestClient) -> None:
     assert setup_done.get("/api/settings").json()["temperature"] == 0.3
 
 
+def test_voice_turn_settings(setup_done: TestClient) -> None:
+    data = setup_done.get("/api/settings").json()
+    # 既定: 黙ったら自動で送る（1.2秒）、続けて聞き取るのはオフ
+    assert (data["voice_auto_stop"], data["voice_silence_ms"], data["voice_handsfree"]) == (True, 1200, False)
+    data = setup_done.put("/api/settings", json={"voice_silence_ms": 800, "voice_handsfree": True}).json()
+    assert (data["voice_silence_ms"], data["voice_handsfree"]) == (800, True)
+
+
+def test_behavior_settings(setup_done: TestClient) -> None:
+    data = setup_done.get("/api/settings").json()
+    behavior = {k: v for k, v in data.items() if k.startswith("behavior_")}
+    # 割り込みだけはマイクがスピーカーの音を拾うおそれがあるため既定でオフ
+    assert behavior == {
+        "behavior_nod": True,
+        "behavior_gaze": True,
+        "behavior_backchannel": True,
+        "behavior_barge_in": False,
+        "behavior_sentence_emotion": True,
+    }
+    data = setup_done.put("/api/settings", json={"behavior_nod": False, "behavior_barge_in": True}).json()
+    assert (data["behavior_nod"], data["behavior_barge_in"]) == (False, True)
+
+
 def test_update_settings_validation(setup_done: TestClient) -> None:
-    for body in [{"temperature": 5}, {"model": "bad model!"}, {"num_ctx": 10}, {}, {"unknown": 1}]:
+    for body in [{"temperature": 5}, {"model": "bad model!"}, {"num_ctx": 10}, {}, {"unknown": 1}, {"voice_silence_ms": 100}]:
         response = setup_done.put("/api/settings", json=body)
         assert response.status_code in (400, 422), body
         assert response.json()["detail"]["message"]

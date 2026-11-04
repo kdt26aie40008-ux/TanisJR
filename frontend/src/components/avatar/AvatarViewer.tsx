@@ -12,6 +12,12 @@ export interface AvatarViewerProps {
   getLevel?: () => number
   emotion?: Emotion
   activity?: Activity
+  /** 聞いている間、相手の声に合わせてうなずく */
+  nod?: boolean
+  /** 相手の声の大きさ（0〜1）。うなずきのきっかけに使う */
+  getListenLevel?: () => number
+  /** 目線をこちらに向け、マウスの位置を目で追う */
+  gaze?: boolean
   className?: string
 }
 
@@ -28,14 +34,26 @@ function hasWebGL(): boolean {
 }
 
 /** VRM アバターの表示。まばたき・呼吸・表情・口パク・会話中のリアクションを行う。 */
-export default function AvatarViewer({ url, getLevel, emotion = 'neutral', activity = 'idle', className }: AvatarViewerProps) {
+export default function AvatarViewer({
+  url,
+  getLevel,
+  emotion = 'neutral',
+  activity = 'idle',
+  nod = true,
+  getListenLevel,
+  gaze: gazeOn = true,
+  className,
+}: AvatarViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [message, setMessage] = useState('')
   // 再読み込みせずに最新の値を描画ループへ渡すための参照
-  const live = useRef({ getLevel, emotion, activity, emotionSince: 0 })
+  const live = useRef({ getLevel, emotion, activity, emotionSince: 0, nod, getListenLevel, gazeOn })
   live.current.getLevel = getLevel
   live.current.activity = activity
+  live.current.nod = nod
+  live.current.getListenLevel = getListenLevel
+  live.current.gazeOn = gazeOn
   if (live.current.emotion !== emotion) {
     live.current.emotion = emotion
     live.current.emotionSince = performance.now() / 1000
@@ -70,7 +88,9 @@ export default function AvatarViewer({ url, getLevel, emotion = 'neutral', activ
     scene.add(light, new THREE.AmbientLight(0xffffff, 0.4))
     // 視線の先（カメラ付近）。考え中は少し上を見る
     const gaze = new THREE.Object3D()
-    scene.add(gaze)
+    const ahead = new THREE.Object3D()
+    ahead.position.set(0, 1.3, 20)
+    scene.add(gaze, ahead)
 
     const resize = () => {
       const { clientWidth: w, clientHeight: h } = container
@@ -118,6 +138,7 @@ export default function AvatarViewer({ url, getLevel, emotion = 'neutral', activ
           camera.lookAt(target)
         }
         gaze.position.copy(camera.position)
+        ahead.position.set(0, camera.position.y, 20)
         setStatus('ready')
       },
       undefined,
@@ -128,18 +149,34 @@ export default function AvatarViewer({ url, getLevel, emotion = 'neutral', activ
       },
     )
 
+    // マウスの位置（-1〜1）。目線で追う
+    const pointer = { x: 0, y: 0 }
+    const onPointerMove = (e: PointerEvent) => {
+      const rect = container.getBoundingClientRect()
+      if (!rect.width || !rect.height) return
+      pointer.x = Math.max(-1.5, Math.min(1.5, ((e.clientX - rect.left) / rect.width) * 2 - 1))
+      pointer.y = Math.max(-1.5, Math.min(1.5, ((e.clientY - rect.top) / rect.height) * 2 - 1))
+    }
+    window.addEventListener('pointermove', onPointerMove)
+
     const clock = new THREE.Clock()
     let nextBlink = 2 + Math.random() * 3
     let blinkStart = -1
     let mouth = 0
     const expressionValues: Record<string, number> = {}
+    // うなずき: 相手の声が続いている間、ときどき小さく頭を下げる
+    let nodStart = -1
+    let nextNodAt = 0
+    let voiceUntil = 0
+    let headYaw = 0
+    let headPitchOffset = 0
 
     const animate = () => {
       frame = requestAnimationFrame(animate)
       const delta = Math.min(clock.getDelta(), 0.1)
       const t = clock.elapsedTime
       if (vrm) {
-        const { getLevel: level, activity: act, emotion: emo, emotionSince } = live.current
+        const { getLevel: level, activity: act, emotion: emo, emotionSince, nod: nodOn, getListenLevel, gazeOn: lookOn } = live.current
         const em = vrm.expressionManager
         const humanoid = vrm.humanoid
 
@@ -174,21 +211,48 @@ export default function AvatarViewer({ url, getLevel, emotion = 'neutral', activ
         const breath = Math.sin(t * 1.6) * 0.02
         const chest = humanoid.getNormalizedBoneNode('chest') ?? humanoid.getNormalizedBoneNode('spine')
         chest?.rotation.set(breath, 0, 0)
+        // うなずき: 相手の声が聞こえている間、1.4〜2.8秒ごとに頭を下げる（たまに2回）
+        let nodAmount = 0
+        if (act === 'listening' && nodOn) {
+          if ((getListenLevel?.() ?? 0) > 0.12) voiceUntil = t + 0.6
+          if (nodStart < 0 && t < voiceUntil && t >= nextNodAt) {
+            nodStart = t
+            nextNodAt = t + 1.4 + Math.random() * 1.4
+          }
+        }
+        if (nodStart >= 0) {
+          const p = (t - nodStart) / 0.55
+          if (p >= 1) nodStart = -1
+          else nodAmount = Math.sin(p * Math.PI) * 0.16
+        }
+
+        // 目線: オンならこちら（カメラ）を見て、マウスの位置を少し追う
+        const lookX = lookOn ? pointer.x : 0
+        const lookY = lookOn ? pointer.y : 0
+        headYaw += (lookX * 0.18 - headYaw) * Math.min(1, delta * 3)
+        headPitchOffset += (lookY * 0.08 - headPitchOffset) * Math.min(1, delta * 3)
+
         const head = humanoid.getNormalizedBoneNode('head')
         if (head) {
-          let pitch = Math.sin(t * 0.7) * 0.03
+          let pitch = Math.sin(t * 0.7) * 0.03 + headPitchOffset + nodAmount
           let roll = Math.sin(t * 0.5) * 0.03
           if (act === 'listening') {
-            pitch += 0.08 + Math.sin(t * 3) * 0.02 // 少しうなずくように聞く
+            pitch += 0.06 // 少し前のめりに聞く
           } else if (act === 'thinking') {
             pitch -= 0.06
             roll += 0.12 // 首をかしげる
           } else if (act === 'speaking') {
             pitch += mouth * 0.05
           }
-          head.rotation.set(pitch, Math.sin(t * 0.4) * 0.05, roll)
+          head.rotation.set(pitch, Math.sin(t * 0.4) * 0.05 + headYaw, roll)
         }
-        gaze.position.set(camera.position.x, camera.position.y + (act === 'thinking' ? 0.5 : 0), camera.position.z)
+        // オフのときは、こちらではなく遠くの正面を見る
+        if (vrm.lookAt) vrm.lookAt.target = lookOn ? gaze : ahead
+        gaze.position.set(
+          camera.position.x + lookX * 0.5,
+          camera.position.y + (act === 'thinking' ? 0.5 : 0) - lookY * 0.35,
+          camera.position.z,
+        )
         vrm.update(delta)
       }
       renderer.render(scene, camera)
@@ -198,6 +262,7 @@ export default function AvatarViewer({ url, getLevel, emotion = 'neutral', activ
     return () => {
       disposed = true
       cancelAnimationFrame(frame)
+      window.removeEventListener('pointermove', onPointerMove)
       observer.disconnect()
       if (vrm) VRMUtils.deepDispose(vrm.scene)
       renderer.dispose()

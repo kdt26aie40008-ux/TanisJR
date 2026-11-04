@@ -21,7 +21,7 @@ export function TrainingPage() {
   const [tab, setTab] = useState<Tab>('data')
   return (
     <section className="page training-page">
-      <h1>学習管理</h1>
+      <h1>成長</h1>
       <p className="hint">
         保存した会話から「理想の返答」を選んで学習させ、AIをあなたらしく調整します。学習は必ず手動で実行し、承認したデータだけを使います。
       </p>

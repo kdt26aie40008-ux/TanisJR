@@ -114,16 +114,18 @@ class FakeTranscriber:
     def __init__(self) -> None:
         self.text = "こんにちは"
         self.calls: list[tuple[int, str, str]] = []
+        self.options: list[tuple[str, bool]] = []
         self.error: Exception | None = None
         self.downloads: list[str] = []
 
     def status(self) -> dict:
         return {"models": [], "models_dir": "x", "loaded": None, "download": None}
 
-    async def transcribe(self, audio: bytes, model: str, device: str):  # noqa: ANN201
+    async def transcribe(self, audio: bytes, model: str, device: str, language: str = "ja", fast: bool = False):  # noqa: ANN201
         from app.speech.stt import Transcript
 
         self.calls.append((len(audio), model, device))
+        self.options.append((language, fast))
         if self.error:
             raise self.error
         return Transcript(text=self.text, duration=1.0, elapsed=0.1, device=device)

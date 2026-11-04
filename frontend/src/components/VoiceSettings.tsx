@@ -60,7 +60,7 @@ function SttSettings({ settings, update }: Props) {
 
   return (
     <>
-      <h3>音声認識（faster-whisper）</h3>
+      <h3>声を聞き取る（faster-whisper）</h3>
       <label className="field">
         <span>認識モデル</span>
         <select value={settings.stt_model} onChange={(e) => update('stt_model', e.target.value)}>
@@ -95,7 +95,36 @@ function SttSettings({ settings, update }: Props) {
       </label>
       <label className="checkbox">
         <input type="checkbox" checked={settings.stt_auto_send} onChange={(e) => update('stt_auto_send', e.target.checked)} />
-        認識したらすぐに送信する（オフにすると、認識結果を確認・修正してから送信）
+        聞き取ったらすぐに送る（オフにすると、聞き取った内容を確認・修正してから送る）
+      </label>
+      <label className="checkbox">
+        <input type="checkbox" checked={settings.voice_auto_stop} onChange={(e) => update('voice_auto_stop', e.target.checked)} />
+        話し終わったら自動で送る（マイクのボタンをもう一度押さなくてよい）
+      </label>
+      {settings.voice_auto_stop && (
+        <label className="field">
+          <span>
+            黙ってから送るまでの時間: <strong>{(settings.voice_silence_ms / 1000).toFixed(1)}秒</strong>
+            （短いと話の途中で送られやすく、長いと返事が遅くなります）
+          </span>
+          <input
+            type="range"
+            min={500}
+            max={3000}
+            step={100}
+            value={settings.voice_silence_ms}
+            onChange={(e) => update('voice_silence_ms', Number(e.target.value))}
+          />
+        </label>
+      )}
+      <label className="checkbox">
+        <input
+          type="checkbox"
+          checked={settings.voice_handsfree}
+          disabled={!settings.stt_auto_send}
+          onChange={(e) => update('voice_handsfree', e.target.checked)}
+        />
+        続けて話す（返事のあと、自動でまた聞き取りを始める。「止める」を押すか、しばらく黙るとおしまい）
       </label>
       {error && <p className="error-text">{error}</p>}
 
@@ -191,7 +220,7 @@ function TtsSettings({ settings, update }: Props) {
 
   return (
     <>
-      <h3>読み上げ（AivisSpeech）</h3>
+      <h3>声で話す（AivisSpeech）</h3>
       {data && !data.available ? (
         <div className="banner warn" role="status">
           {data.message}
@@ -253,7 +282,7 @@ function TtsSettings({ settings, update }: Props) {
       </label>
       <label className="checkbox">
         <input type="checkbox" checked={settings.tts_auto_read} onChange={(e) => update('tts_auto_read', e.target.checked)} />
-        音声会話でAIの返答を自動で読み上げる
+        返事を声で読み上げる
       </label>
       <label className="checkbox">
         <input

@@ -78,7 +78,7 @@ describe('ChatPage saving', () => {
     mockFetch(routes())
     renderWithConversation(<ChatPage aiName="タニス" />)
     await user.type(screen.getByLabelText('メッセージ'), 'ラーメン{Enter}')
-    expect(await screen.findByText('参照した記憶（1）')).toBeInTheDocument()
+    expect(await screen.findByText('思い出したこと（1）')).toBeInTheDocument()
     expect(screen.getByText('ユーザーはラーメンが好き')).toBeInTheDocument()
   })
 
@@ -101,7 +101,7 @@ describe('ChatPage saving', () => {
     )
     renderWithConversation(<ChatPage aiName="タニス" />)
     await user.type(screen.getByLabelText('メッセージ'), '明日10時に歯医者入れて{Enter}')
-    expect(await screen.findByText('AIの提案')).toBeInTheDocument()
+    expect(await screen.findByText('会話からの提案')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '承認して実行' })).toBeInTheDocument()
   })
 
