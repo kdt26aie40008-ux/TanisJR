@@ -237,6 +237,7 @@ export const api = {
   setAutostart: (enabled: boolean) => json<{ autostart: boolean }>('/api/system/autostart', body({ enabled }, 'PUT')),
   restartServer: () => json<{ restarting: boolean }>('/api/system/restart', { method: 'POST' }),
   stopServer: () => json<{ stopping: boolean }>('/api/system/stop', { method: 'POST' }),
+  startFresh: () => json<{ restarting: boolean }>('/api/system/start-fresh', body({ confirmed: true })),
 }
 
 export function errorMessage(err: unknown): string {

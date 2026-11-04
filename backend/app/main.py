@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -20,7 +21,8 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app import __version__
 from app.backup import BackupError
-from app.config import Config, load_config
+from app.config import LEGACY_DATA_DIR, Config, load_config
+from app.data_location import apply_start_fresh, migrate_legacy_data
 from app.crypto import CryptoError, DataLocked, DpapiProtector, KeyStore, Protector, Vault
 from app.db import Database
 from app.deps import Services
@@ -282,12 +284,23 @@ def main() -> None:
     args = parser.parse_args()
 
     config = load_config()
+    # 再起動時は前のプロセスの終了を待つ（前のプロセスが開いているファイルは移動できないため、データの退避より先に行う）
+    if args.wait_for_port and not wait_for_port_free(config.port):
+        print(f"ポート {config.port} が使用中のため起動できません", file=sys.stderr)
+        sys.exit(1)
+    # データの移動・退避は、ログファイルなどを開く前に行う（開いているファイルは Windows で移動できない）
+    startup_notes: list[str] = []
+    if not os.environ.get("TWIN_DATA_DIR"):
+        result = migrate_legacy_data(LEGACY_DATA_DIR, config.data_dir, DpapiProtector())
+        startup_notes.append(f"以前の保存先の確認: {result}")
+    archived = apply_start_fresh(config.data_dir)
+    if archived:
+        startup_notes.append(f"以前のデータを {archived.name} に退避し、新しく始めました")
     if args.background or sys.stderr is None:
         _redirect_output_to_log(config.data_dir)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s", force=True)
-    if args.wait_for_port and not wait_for_port_free(config.port):
-        logger.error("ポート %d が使用中のため起動できません", config.port)
-        sys.exit(1)
+    for note in startup_notes:
+        logger.info(note)
     logger.info("データ保存先: %s", config.data_dir)
     logger.info("http://127.0.0.1:%d で起動します", config.port)
     # 外部からの接続を受けないよう 127.0.0.1 に固定する
