@@ -1,6 +1,7 @@
 import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { ConversationProvider } from '../state/ConversationContext'
 import { jsonResponse, mockFetch, sseResponse } from '../test/fetchMock'
 import { renderWithConversation } from '../test/render'
 import { ChatPage } from './ChatPage'
@@ -49,6 +50,28 @@ describe('ChatPage', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Ollama に接続できません。')
     expect(screen.getByLabelText('メッセージ')).toHaveValue('テスト')
+  })
+
+  it('reloads voice settings each time the screen is shown', async () => {
+    const calls = mockFetch({
+      'GET /api/models/status': () => jsonResponse(MODEL_OK),
+      'GET /api/speech/tts/speakers': () => jsonResponse({ available: true, message: null, speakers: [], selected: null }),
+    })
+    const { rerender } = renderWithConversation(<ChatPage aiName="タニス" visible />)
+    const speakerCalls = () => calls.filter((c) => c.url === '/api/speech/tts/speakers').length
+    await vi.waitFor(() => expect(speakerCalls()).toBe(1))
+    // 設定画面で声を選び直して戻ってきたら、読み直す
+    rerender(
+      <ConversationProvider>
+        <ChatPage aiName="タニス" visible={false} />
+      </ConversationProvider>,
+    )
+    rerender(
+      <ConversationProvider>
+        <ChatPage aiName="タニス" visible />
+      </ConversationProvider>,
+    )
+    await vi.waitFor(() => expect(speakerCalls()).toBe(2))
   })
 
   it('offers download with size when the model is missing', async () => {
