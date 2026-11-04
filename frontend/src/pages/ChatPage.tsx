@@ -87,15 +87,13 @@ export function ChatPage({ aiName, visible = true }: Props) {
     return () => player.dispose()
   }, [player])
 
-  // 声の機能の準備状況。失敗しても文字の会話はできるので、ここではエラーを表示しない
+  // 設定画面で変えた内容（声の選択・利用規約の確認・音声認識モデルなど）を反映するため、
+  // 画面を開くたびに読み直す。失敗しても文字の会話はできるので、ここではエラーを表示しない
   useEffect(() => {
+    if (!visible) return
+    api.getSettings().then(setSettings, () => undefined)
     api.sttStatus().then(setStt, () => undefined)
     api.speakers().then(setSpeakers, () => undefined)
-  }, [])
-
-  // 設定画面で変えた内容を反映するため、画面を開くたびに設定を読み直す
-  useEffect(() => {
-    if (visible) api.getSettings().then(setSettings, () => undefined)
   }, [visible])
 
   useEffect(() => {
