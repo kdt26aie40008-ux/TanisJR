@@ -19,6 +19,8 @@ import { useAvatars } from '../state/useActiveAvatar'
 import { useWakeWord } from '../state/useWakeWord'
 
 const MAX_INPUT = 8000
+/** 名前を呼んで話し始めたら、この間は名前を呼ばなくても続けて話せる（最後のやりとりから数える） */
+export const CONVERSATION_MS = 5 * 60_000
 
 /** 文章全体を文ごとに分けて読み上げる（数式は言葉にし、コードや書式の記号は読まない） */
 function speakAll(text: string, speak: (sentence: string) => void): void {
@@ -67,6 +69,10 @@ export function ChatPage({ aiName, visible = true }: Props) {
   const [handsfree, setHandsfree] = useState(false)
   // 「続けて話す」で、返事を話し終えたら次の聞き取りを始める合図
   const [relisten, setRelisten] = useState(false)
+  // 名前を呼んで始めた会話の途中か（この間は名前を呼ばなくても聞き続ける）
+  const [conversing, setConversing] = useState(false)
+  const conversingRef = useRef(false)
+  conversingRef.current = conversing
   const recorderRef = useRef<Recorder | null>(null)
   const playerRef = useRef<SpeechPlayer | null>(null)
   const detectorRef = useRef<EndpointDetector | null>(null)
@@ -231,29 +237,66 @@ export function ChatPage({ aiName, visible = true }: Props) {
 
   const autoStop = settings?.voice_auto_stop ?? true
 
-  const startRecording = async () => {
+  /**
+   * 聞き取りを始める。
+   * 名前を呼んで始めた会話の途中なら、話しかけを最大5分待つ（waitUntil まで）。
+   */
+  const startRecording = async (waitUntil?: number) => {
     setVoiceError('')
-    setVoiceNotice('')
+    if (waitUntil === undefined) setVoiceNotice('')
     warmUp()
     player.stop()
     player.unlock()
     const recorder = new Recorder()
-    recorder.onAutoStop = () => void finishRecording()
+    const detector = autoStop
+      ? new EndpointDetector({
+          silenceMs: settings?.voice_silence_ms ?? 1200,
+          noSpeechTimeoutMs: waitUntil === undefined ? undefined : Math.max(1000, waitUntil - Date.now()),
+        })
+      : null
+    recorder.onAutoStop = () => {
+      // 会話の途中で黙って待っている間は、録音を区切り直して待ち続ける（音声をためこまない）
+      if (waitUntil !== undefined && detector && !detector.heardSpeech && recorderRef.current === recorder) {
+        recorder.cancel()
+        recorderRef.current = null
+        void startRecording(waitUntil)
+        return
+      }
+      void finishRecording()
+    }
     try {
       await recorder.start()
     } catch (err) {
       setVoiceError(err instanceof RecorderError ? err.message : 'マイクを開始できませんでした。')
       setHandsfree(false)
+      setConversing(false)
       return
     }
     recorderRef.current = recorder
-    detectorRef.current = autoStop ? new EndpointDetector({ silenceMs: settings?.voice_silence_ms ?? 1200 }) : null
+    detectorRef.current = detector
     setPhase('recording')
+  }
+
+  /** 名前を呼ばれた。ここから5分間は、名前を呼ばなくても続けて話せる */
+  const startConversation = (rest: string) => {
+    setConversing(true)
+    setHandsfree(true)
+    setVoiceNotice('')
+    if (rest) {
+      voiceTurnRef.current = true
+      void talk(rest).then((reply) => {
+        setRelisten(!reply.failed)
+        if (reply.failed) endConversation()
+      })
+    } else {
+      void startRecording(Date.now() + CONVERSATION_MS)
+    }
   }
 
   /** マイクのボタンから話し始める。「続けて話す」がオンなら、止めるまで会話を続ける */
   const startByUser = () => {
     setHandsfree(Boolean(settings?.voice_handsfree && settings.stt_auto_send))
+    setConversing(false)
     void startRecording()
   }
 
@@ -265,21 +308,29 @@ export function ChatPage({ aiName, visible = true }: Props) {
     setPhase('transcribing')
     try {
       const audio = await recorder.stop()
-      const autoSend = settings?.stt_auto_send ?? true
-      // 聞き取りの間を埋めるため、送る前に相づちを入れる
-      const backchanneled = autoSend && backchannel()
+      // 名前を呼んで始めた会話では、聞き取った言葉をそのまま送る
+      const autoSend = (settings?.stt_auto_send ?? true) || conversingRef.current
       const result = await api.transcribe(audio)
       if (result.notice) setVoiceNotice(result.notice)
       if (!result.text) {
+        if (conversingRef.current) {
+          // 会話の途中で物音などを拾っただけなら、何も言わずに聞き直す
+          setPhase('idle')
+          setRelisten(true)
+          return
+        }
         setVoiceError('聞き取れませんでした。もう一度話してください。')
         setHandsfree(false)
         setPhase('idle')
         return
       }
+      // 聞き取りの間を埋めるため、送る前に相づちを入れる
+      const backchanneled = autoSend && backchannel()
       if (autoSend) {
         voiceTurnRef.current = true
         const reply = await talk(result.text, { afterBackchannel: backchanneled })
         setRelisten(!reply.failed)
+        if (reply.failed) endConversation()
       } else {
         setRecognized(result.text)
         setPhase('idle')
@@ -287,8 +338,16 @@ export function ChatPage({ aiName, visible = true }: Props) {
     } catch (err) {
       setVoiceError(err instanceof RecorderError ? err.message : errorMessage(err))
       setHandsfree(false)
+      setConversing(false)
       setPhase('idle')
     }
+  }
+
+  /** 返事を受け取れなかったら、名前を呼んで始めた会話はいったん終える（また呼べば再開できる） */
+  const endConversation = () => {
+    if (!conversingRef.current) return
+    setConversing(false)
+    setHandsfree(false)
   }
 
   /** 話しかけがないまま時間が過ぎたら、聞くのをやめる（録音は捨てる） */
@@ -298,6 +357,11 @@ export function ChatPage({ aiName, visible = true }: Props) {
     detectorRef.current = null
     setHandsfree(false)
     setPhase('idle')
+    if (conversingRef.current) {
+      setConversing(false)
+      setVoiceNotice(`しばらく話しかけがなかったので、会話を終えました。また「ねえ、${aiName}」で呼んでね。`)
+      return
+    }
     setVoiceNotice('話しかけがなかったので、聞くのをやめました。')
   }
 
@@ -309,7 +373,8 @@ export function ChatPage({ aiName, visible = true }: Props) {
     if (!handsfree || !relisten || phase !== 'idle' || speaking || streaming) return
     const id = window.setTimeout(() => {
       setRelisten(false)
-      void startRecording()
+      // 名前を呼んで始めた会話なら、返事を話し終えてから5分間、話しかけを待つ
+      void startRecording(conversingRef.current ? Date.now() + CONVERSATION_MS : undefined)
     }, 600)
     return () => window.clearTimeout(id)
     // startRecording は毎回作り直されるため依存に含めない
@@ -380,6 +445,7 @@ export function ChatPage({ aiName, visible = true }: Props) {
 
   const stopAll = () => {
     setHandsfree(false)
+    setConversing(false)
     setRelisten(false)
     voiceTurnRef.current = false
     turnRef.current += 1
@@ -451,12 +517,7 @@ export function ChatPage({ aiName, visible = true }: Props) {
     names: [aiName, settings?.wake_reading ?? ''],
     onWake: (rest) => {
       if (!visible) window.location.hash = '#/chat'
-      if (rest) {
-        voiceTurnRef.current = true
-        void talk(rest)
-      } else {
-        startByUser()
-      }
+      startConversation(rest)
     },
   })
 
@@ -532,7 +593,13 @@ export function ChatPage({ aiName, visible = true }: Props) {
             </button>
           )}
         </div>
-        {handsfree && <p className="hint">続けて話せます。おしまいにするときは「止める」を押してください。</p>}
+        {handsfree && (
+          <p className="hint">
+            {conversing
+              ? '名前を呼ばなくても続けて話せます。5分ほど話しかけがないと終わります（すぐ終えるときは「止める」）。'
+              : '続けて話せます。おしまいにするときは「止める」を押してください。'}
+          </p>
+        )}
         {stt && !sttReady && (
           <p className="hint">
             声で話すには、<a href="#/settings">設定</a>の「声」で音声認識を準備してください。
