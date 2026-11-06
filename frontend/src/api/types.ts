@@ -56,6 +56,7 @@ export interface AppSettings {
   notifications_enabled: boolean
   default_reminder_minutes: number
   calendar_ai_proposals: boolean
+  calendar_backend: 'local' | 'google'
 }
 
 export type LanguageCode = 'ja' | 'en' | 'zh' | 'ko' | 'es' | 'fr' | 'de'
@@ -79,6 +80,8 @@ export interface WakeStatus {
 }
 
 export interface CalendarStatus {
+  /** 予定の保存先。local: アプリ内（この PC のこのユーザーだけ）/ google: Google カレンダー */
+  backend: 'local' | 'google'
   configured: boolean
   /** bundled: アプリに同梱された登録（ログインするだけで連携できる）/ own: この PC で自分で登録したもの */
   source: 'bundled' | 'own' | null

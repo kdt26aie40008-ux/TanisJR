@@ -199,7 +199,8 @@ export const api = {
   removeCalendarClient: () => json<CalendarStatus>('/api/calendar/client', { method: 'DELETE' }),
   startCalendarAuth: () => json<{ url: string }>('/api/calendar/auth/start', { method: 'POST' }),
   disconnectCalendar: () => json<CalendarStatus>('/api/calendar/disconnect', { method: 'POST' }),
-  calendarEvents: (days = 14) => json<CalendarEvent[]>(`/api/calendar/events?days=${days}`),
+  calendarEvents: (days = 14, start?: string) =>
+    json<CalendarEvent[]>(`/api/calendar/events?days=${days}${start ? `&start=${start}` : ''}`),
   setEventNotify: (eventId: string, minutes: number | null) =>
     json<{ minutes: number | null }>(`/api/calendar/events/${encodeURIComponent(eventId)}/notify`, body({ minutes }, 'PUT')),
   calendarOperations: (status: 'pending' | 'all' = 'pending') =>

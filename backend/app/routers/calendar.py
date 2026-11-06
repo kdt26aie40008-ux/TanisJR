@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, datetime, timedelta
 from html import escape
 
 from fastapi import APIRouter, Depends, Path, Query, Request
@@ -94,10 +94,17 @@ async def disconnect(services: Services = Depends(get_services)) -> dict:
 
 
 @router.get("/events")
-async def events(days: int = Query(default=14, ge=1, le=60), services: Services = Depends(get_services)) -> list[CalendarEvent]:
+async def events(
+    days: int = Query(default=14, ge=1, le=62),
+    start: date | None = Query(default=None),
+    services: Services = Depends(get_services),
+) -> list[CalendarEvent]:
+    """start（省略時は今日）から days 日分の予定。月の表示では月初めの週から6週分を取る。"""
     now = local_now()
-    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    return await services.calendar.list_events(start, start + timedelta(days=days))
+    begin = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if start is not None:
+        begin = datetime.combine(start, datetime.min.time()).astimezone()
+    return await services.calendar.list_events(begin, begin + timedelta(days=days))
 
 
 @router.put("/events/{event_id}/notify")
@@ -119,8 +126,18 @@ def operations(
 
 @router.post("/operations")
 async def create_operation(body: OperationCreate, services: Services = Depends(get_services)) -> Operation:
-    """画面のフォームからの操作も、まず下書きとして保存する（実行は承認後）。"""
-    return await services.calendar.propose(body, source="user")
+    """画面のフォームからの操作。
+
+    アプリ内カレンダーでは、本人がフォームで確定した操作なのでそのまま反映する。
+    Google カレンダーでは、まず下書きとして保存し、承認ボタンで初めて反映する。
+    （AI が会話から提案した操作は、どちらでも承認されるまで反映しない）
+    """
+    op = await services.calendar.propose(body, source="user")
+    if services.calendar.is_local():
+        op = await services.calendar.approve(op.id)
+        if services.scheduler:
+            await services.scheduler.sync(force=True)
+    return op
 
 
 @router.post("/operations/{op_id}/approve")

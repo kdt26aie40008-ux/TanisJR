@@ -155,6 +155,8 @@ class AppSettings(StrictModel):
     tts_acknowledged_speakers: list[str] = Field(default_factory=list)
     avatar_id: str = ""
     # --- カレンダー・通知 (Phase 4) ---
+    # 予定の保存先。local: アプリ内（この PC のこのユーザーだけ）/ google: Google カレンダー
+    calendar_backend: Literal["local", "google"] = "local"
     notifications_enabled: bool = True
     # 予定の何分前に通知するか（予定ごとの設定がない場合）
     default_reminder_minutes: int = Field(default=10, ge=0, le=1440)
@@ -207,6 +209,7 @@ class SettingsUpdate(StrictModel):
     tts_speed: float | None = Field(default=None, ge=0.5, le=2.0)
     tts_auto_read: bool | None = None
     tts_engine_autostart: bool | None = None
+    calendar_backend: Literal["local", "google"] | None = None
     notifications_enabled: bool | None = None
     default_reminder_minutes: int | None = Field(default=None, ge=0, le=1440)
     calendar_ai_proposals: bool | None = None

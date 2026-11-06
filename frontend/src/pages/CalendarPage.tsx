@@ -22,6 +22,12 @@ export function CalendarPage() {
   const [events, setEvents] = useState<CalendarEvent[] | null>(null)
   const [pending, setPending] = useState<CalendarOperation[]>([])
   const [editing, setEditing] = useState<CalendarEvent | 'new' | null>(null)
+  const [newDay, setNewDay] = useState<string | null>(null)
+  // 月の表示を読み直すための合図
+  const [version, setVersion] = useState(0)
+
+  const local = status?.backend !== 'google'
+  const usable = Boolean(status && (local || status.connected))
 
   const loadStatus = useCallback(async () => {
     try {
@@ -36,6 +42,7 @@ export function CalendarPage() {
       const [ev, ops] = await Promise.all([api.calendarEvents(14), api.calendarOperations('pending')])
       setEvents(ev)
       setPending(ops)
+      setVersion((v) => v + 1)
       setError('')
     } catch (err) {
       setError(errorMessage(err))
@@ -48,19 +55,53 @@ export function CalendarPage() {
   }, [loadStatus])
 
   useEffect(() => {
-    if (status?.connected) void loadData()
-  }, [status?.connected, loadData])
+    if (usable) void loadData()
+  }, [usable, status?.backend, loadData])
 
   const propose = async (value: Parameters<typeof api.proposeCalendarOperation>[0]) => {
     try {
       const op = await api.proposeCalendarOperation(value)
-      setPending((prev) => [op, ...prev])
       setEditing(null)
-      document.getElementById('pending-operations')?.scrollIntoView?.({ behavior: 'smooth' })
+      if (op.status === 'pending') {
+        // Google カレンダーでは、承認するまで反映しない
+        setPending((prev) => [op, ...prev])
+        document.getElementById('pending-operations')?.scrollIntoView?.({ behavior: 'smooth' })
+      } else {
+        // アプリ内カレンダーでは、本人の操作はすぐ反映される
+        await loadData()
+      }
     } catch (err) {
       setError(errorMessage(err))
     }
   }
+
+  const switchBackend = async (backend: 'local' | 'google') => {
+    try {
+      await api.updateSettings({ calendar_backend: backend })
+      setEvents(null)
+      await loadStatus()
+    } catch (err) {
+      setError(errorMessage(err))
+    }
+  }
+
+  const openNew = (day: string | null) => {
+    setNewDay(day)
+    setEditing('new')
+  }
+
+  const form = editing && (
+    <EventForm
+      key={editing === 'new' ? `new-${newDay}` : editing.id}
+      initial={editing === 'new' ? null : editing}
+      day={editing === 'new' ? newDay : null}
+      local={local}
+      onCancel={() => setEditing(null)}
+      onSubmit={(draft) =>
+        void propose(editing === 'new' ? { action: 'create', draft } : { action: 'update', event_id: editing.id, draft })
+      }
+    />
+  )
 
   return (
     <section className="page calendar-page">
@@ -71,12 +112,31 @@ export function CalendarPage() {
         </div>
       )}
 
-      <ConnectionPanel status={status} onChanged={setStatus} onError={setError} reload={loadStatus} />
+      {status && !local && (
+        <ConnectionPanel status={status} onChanged={setStatus} onError={setError} reload={loadStatus} />
+      )}
 
-      {status?.connected && (
+      {status && local && (
+        <MonthCalendar
+          version={version}
+          onAdd={(day) => openNew(day)}
+          onEdit={setEditing}
+          onDelete={(e) => {
+            if (window.confirm(`「${e.summary}」を削除しますか？`)) void propose({ action: 'delete', event_id: e.id })
+          }}
+          onError={setError}
+          form={form}
+        />
+      )}
+
+      {usable && (
         <>
+          {(!local || pending.length > 0) && (
           <div className="panel" id="pending-operations">
             <h2>承認待ちの操作</h2>
+            {local && (
+              <p className="hint">会話の中で提案された予定です。承認したときだけカレンダーに追加・変更されます。</p>
+            )}
             {pending.length === 0 ? (
               <p className="hint">承認待ちの操作はありません。予定の追加・変更・削除は、ここで承認したときだけ実行されます。</p>
             ) : (
@@ -93,30 +153,21 @@ export function CalendarPage() {
               ))
             )}
           </div>
+          )}
 
           <div className="panel">
             <div className="panel-head">
-              <h2>予定（今日から14日間）</h2>
+              <h2>これからの予定（14日間）</h2>
               <div className="actions">
                 <button className="btn small" onClick={() => void loadData()}>
                   更新
                 </button>
-                <button className="btn small primary" onClick={() => setEditing('new')}>
+                <button className="btn small primary" onClick={() => openNew(null)}>
                   予定を追加
                 </button>
               </div>
             </div>
-            {editing && (
-              <EventForm
-                initial={editing === 'new' ? null : editing}
-                onCancel={() => setEditing(null)}
-                onSubmit={(draft) =>
-                  void propose(
-                    editing === 'new' ? { action: 'create', draft } : { action: 'update', event_id: editing.id, draft },
-                  )
-                }
-              />
-            )}
+            {!local && form}
             {events === null ? (
               <p>読み込み中…</p>
             ) : events.length === 0 ? (
@@ -125,7 +176,9 @@ export function CalendarPage() {
               <EventList
                 events={events}
                 onEdit={setEditing}
-                onDelete={(e) => void propose({ action: 'delete', event_id: e.id })}
+                onDelete={(e) => {
+                  if (!local || window.confirm(`「${e.summary}」を削除しますか？`)) void propose({ action: 'delete', event_id: e.id })
+                }}
                 onError={setError}
               />
             )}
@@ -134,8 +187,174 @@ export function CalendarPage() {
       )}
 
       <NotificationPanel />
+
+      {status && (
+        <div className="panel">
+          <details className="advanced google-switch">
+            <summary>Google カレンダーと連携する（詳しい設定）</summary>
+            {local ? (
+              <>
+                <p className="hint">
+                  いまはアプリ内のカレンダーを使っています。予定はこの PC の、あなたの Windows ユーザーのデータにだけ暗号化して保存され、
+                  ほかの人と共有されることはありません。Google カレンダーとの連携は、正式公開のときに使えるようにする予定です（準備中）。
+                </p>
+                <div className="actions wrap">
+                  <button className="btn small" onClick={() => void switchBackend('google')}>
+                    Google カレンダーに切り替える
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="hint">いまは Google カレンダーを使っています。アプリ内の予定は消えずに残っています。</p>
+                <div className="actions wrap">
+                  <button className="btn small" onClick={() => void switchBackend('local')}>
+                    アプリ内のカレンダーに戻す
+                  </button>
+                </div>
+              </>
+            )}
+          </details>
+        </div>
+      )}
       <ServicePanel />
     </section>
+  )
+}
+
+// ===================== 月の表示（アプリ内カレンダー） =====================
+
+const WEEK_LABELS = ['日', '月', '火', '水', '木', '金', '土']
+
+function isoDay(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** 月のマス目（日曜始まり・6週）。予定のある日を一覧で見て、日付を押すとその日の予定と追加ができる */
+function MonthCalendar({
+  version,
+  onAdd,
+  onEdit,
+  onDelete,
+  onError,
+  form,
+}: {
+  version: number
+  onAdd: (day: string) => void
+  onEdit: (e: CalendarEvent) => void
+  onDelete: (e: CalendarEvent) => void
+  onError: (m: string) => void
+  form: React.ReactNode
+}) {
+  const today = isoDay(new Date())
+  const [month, setMonth] = useState(() => {
+    const d = new Date()
+    return new Date(d.getFullYear(), d.getMonth(), 1)
+  })
+  const [selected, setSelected] = useState(today)
+  const [events, setEvents] = useState<CalendarEvent[]>([])
+
+  const gridStart = new Date(month)
+  gridStart.setDate(1 - month.getDay())
+  const days = Array.from({ length: 42 }, (_, i) => {
+    const d = new Date(gridStart)
+    d.setDate(gridStart.getDate() + i)
+    return d
+  })
+  const startKey = isoDay(gridStart)
+
+  useEffect(() => {
+    api.calendarEvents(42, startKey).then(setEvents, (err) => onError(errorMessage(err)))
+  }, [startKey, version, onError])
+
+  // 複数日にまたがる予定は、またがるすべての日に表示する
+  const byDay = new Map<string, CalendarEvent[]>()
+  for (const e of events) {
+    const first = dayKey(e.start)
+    const last = e.all_day ? e.end : dayKey(new Date(new Date(e.end).getTime() - 1).toISOString())
+    for (const d of days) {
+      const key = isoDay(d)
+      if (key >= first && key <= last) byDay.set(key, [...(byDay.get(key) ?? []), e])
+    }
+  }
+  const selectedEvents = byDay.get(selected) ?? []
+  const move = (delta: number) => setMonth(new Date(month.getFullYear(), month.getMonth() + delta, 1))
+
+  return (
+    <div className="panel month-panel">
+      <div className="panel-head">
+        <h2>
+          {month.getFullYear()}年{month.getMonth() + 1}月
+        </h2>
+        <div className="actions">
+          <button className="btn small" onClick={() => move(-1)} aria-label="前の月">
+            ‹
+          </button>
+          <button
+            className="btn small"
+            onClick={() => {
+              setMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1))
+              setSelected(today)
+            }}
+          >
+            今日
+          </button>
+          <button className="btn small" onClick={() => move(1)} aria-label="次の月">
+            ›
+          </button>
+        </div>
+      </div>
+      <div className="month-grid" role="grid" aria-label="月のカレンダー">
+        {WEEK_LABELS.map((w, i) => (
+          <div key={w} className={`month-week${i === 0 ? ' sun' : i === 6 ? ' sat' : ''}`} role="columnheader">
+            {w}
+          </div>
+        ))}
+        {days.map((d) => {
+          const key = isoDay(d)
+          const items = byDay.get(key) ?? []
+          const outside = d.getMonth() !== month.getMonth()
+          return (
+            <button
+              key={key}
+              type="button"
+              role="gridcell"
+              className={`month-day${outside ? ' outside' : ''}${key === today ? ' today' : ''}${key === selected ? ' selected' : ''}`}
+              onClick={() => setSelected(key)}
+              aria-label={`${d.getMonth() + 1}月${d.getDate()}日${items.length ? `、予定${items.length}件` : ''}`}
+              aria-pressed={key === selected}
+            >
+              <span className="month-date">{d.getDate()}</span>
+              {items.slice(0, 2).map((e) => (
+                <span key={e.id} className="month-chip">
+                  {e.all_day ? '' : `${toLocalInput(e.start).slice(11, 16)} `}
+                  {e.summary}
+                </span>
+              ))}
+              {items.length > 2 && <span className="month-more">ほか{items.length - 2}件</span>}
+            </button>
+          )
+        })}
+      </div>
+
+      <div className="month-detail">
+        <div className="panel-head">
+          <h3>{formatDay(selected)}の予定</h3>
+          <button className="btn small primary" onClick={() => onAdd(selected)}>
+            この日に予定を追加
+          </button>
+        </div>
+        {form}
+        {selectedEvents.length === 0 ? (
+          <p className="hint">予定はありません。</p>
+        ) : (
+          <EventList events={selectedEvents} onEdit={onEdit} onDelete={onDelete} onError={onError} hideDay />
+        )}
+      </div>
+      <p className="hint">
+        予定はこの PC の、あなたの Windows ユーザーのデータにだけ暗号化して保存されます。ほかの人と共有・公開する機能はありません。
+      </p>
+    </div>
   )
 }
 
@@ -311,11 +530,14 @@ function EventList({
   onEdit,
   onDelete,
   onError,
+  hideDay = false,
 }: {
   events: CalendarEvent[]
   onEdit: (e: CalendarEvent) => void
   onDelete: (e: CalendarEvent) => void
   onError: (m: string) => void
+  /** 1日分だけを表示するときは、日付の見出しを出さない */
+  hideDay?: boolean
 }) {
   const [overrides, setOverrides] = useState<Record<string, number | null>>({})
   const groups = new Map<string, CalendarEvent[]>()
@@ -338,7 +560,7 @@ function EventList({
     <div className="event-days">
       {[...groups.entries()].map(([day, items]) => (
         <div key={day} className="event-day">
-          <h3>{formatDay(day)}</h3>
+          {!hideDay && <h3>{formatDay(day)}</h3>}
           <ul className="memory-list">
             {items.map((e) => {
               const notify = e.id in overrides ? overrides[e.id] : e.notify_minutes
@@ -381,7 +603,7 @@ function EventList({
   )
 }
 
-function defaultDraft(initial: CalendarEvent | null): EventDraft {
+function defaultDraft(initial: CalendarEvent | null, day: string | null = null): EventDraft {
   if (initial) {
     return {
       summary: initial.summary,
@@ -395,20 +617,31 @@ function defaultDraft(initial: CalendarEvent | null): EventDraft {
   }
   const start = new Date()
   start.setHours(start.getHours() + 1, 0, 0, 0)
+  // 月の表示で日付を選んで追加するときは、その日の同じ時刻にする
+  if (day) {
+    const [y, m, d] = day.split('-').map(Number)
+    start.setFullYear(y, m - 1, d)
+  }
   const end = new Date(start.getTime() + 60 * 60 * 1000)
   return { summary: '', all_day: false, start: toLocalInput(start), end: toLocalInput(end), location: '', description: '', reminder_minutes: null }
 }
 
 function EventForm({
   initial,
+  day = null,
+  local,
   onCancel,
   onSubmit,
 }: {
   initial: CalendarEvent | null
+  /** 新しい予定の日付（月の表示で選んだ日） */
+  day?: string | null
+  /** アプリ内カレンダー（保存したらすぐ反映）か、Google カレンダー（承認してから反映）か */
+  local: boolean
   onCancel: () => void
   onSubmit: (draft: EventDraft) => void
 }) {
-  const [draft, setDraft] = useState<EventDraft>(() => defaultDraft(initial))
+  const [draft, setDraft] = useState<EventDraft>(() => defaultDraft(initial, day))
   const set = <K extends keyof EventDraft>(key: K, value: EventDraft[K]) => setDraft((d) => ({ ...d, [key]: value }))
 
   const toggleAllDay = (allDay: boolean) =>
@@ -465,12 +698,12 @@ function EventForm({
         <textarea value={draft.description} maxLength={2000} rows={2} onChange={(e) => set('description', e.target.value)} />
       </label>
       <label className="field">
-        <span>Google カレンダーのリマインダー</span>
+        <span>{local ? '通知' : 'Google カレンダーのリマインダー'}</span>
         <select
           value={draft.reminder_minutes == null ? '' : String(draft.reminder_minutes)}
           onChange={(e) => set('reminder_minutes', e.target.value === '' ? null : Number(e.target.value))}
         >
-          <option value="">カレンダーの既定</option>
+          <option value="">{local ? '既定（通知の設定に合わせる）' : 'カレンダーの既定'}</option>
           {NOTIFY_OPTIONS.filter(([v]) => v !== '' && v !== '-1').map(([v, label]) => (
             <option key={v} value={v}>
               {label}
@@ -478,13 +711,15 @@ function EventForm({
           ))}
         </select>
       </label>
-      <p className="hint">「確認へ進む」を押すと承認待ちの操作が作られます。承認するまで Google カレンダーは変更されません。</p>
+      {!local && (
+        <p className="hint">「確認へ進む」を押すと承認待ちの操作が作られます。承認するまで Google カレンダーは変更されません。</p>
+      )}
       <div className="actions">
         <button type="button" className="btn" onClick={onCancel}>
           キャンセル
         </button>
         <button type="submit" className="btn primary">
-          確認へ進む
+          {local ? '保存' : '確認へ進む'}
         </button>
       </div>
     </form>

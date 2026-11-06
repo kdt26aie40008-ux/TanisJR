@@ -139,6 +139,16 @@ MIGRATIONS: dict[int, str] = {
         finished_at   TEXT
     );
     """,
+    6: """
+    -- アプリ内カレンダーの予定。内容（タイトル・日時・場所・メモ）はすべて暗号化して data に入れる。
+    -- 保存先は Windows ユーザーごとのデータフォルダーで、他のユーザーと共有する仕組みは持たない
+    CREATE TABLE local_events (
+        id         TEXT PRIMARY KEY,
+        data       TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    """,
 }
 
 LATEST_VERSION = max(MIGRATIONS)

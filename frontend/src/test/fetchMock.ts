@@ -25,7 +25,9 @@ export function mockFetch(routes: Record<string, Handler>) {
     const url = String(input)
     calls.push({ url, init })
     const key = `${init?.method ?? 'GET'} ${url}`
-    const handler = routes[key]
+    // 末尾が * のキーは前方一致（クエリーが日付などで変わる URL 用）
+    const handler =
+      routes[key] ?? Object.entries(routes).find(([k]) => k.endsWith('*') && key.startsWith(k.slice(0, -1)))?.[1]
     if (!handler) throw new Error(`unexpected fetch: ${key}`)
     return handler(url, init)
   })

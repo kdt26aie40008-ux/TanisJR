@@ -30,6 +30,11 @@ def config(config: Config, bundled_file: Path) -> Config:  # conftest の config
     return dataclasses.replace(config, google_client_file=bundled_file)
 
 
+@pytest.fixture(autouse=True)
+def google_backend(client: TestClient) -> None:
+    assert client.put("/api/settings", json={"calendar_backend": "google"}).status_code == 200
+
+
 def client_id_in(url: str) -> str:
     return parse_qs(urlparse(url).query)["client_id"][0]
 
