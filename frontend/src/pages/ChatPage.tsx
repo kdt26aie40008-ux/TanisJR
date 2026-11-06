@@ -440,6 +440,12 @@ export function ChatPage({ aiName, visible = true }: Props) {
       !recognized &&
       !monitorWanted,
   )
+  // 呼びかけを待つときも音声認識を先に準備する（GPU の初回は20秒ほどかかるため）
+  useEffect(() => {
+    if (wakeActive) warmUp()
+    // warmUp は毎回作り直されるため依存に含めない
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wakeActive])
   const { listening: waitingForCall } = useWakeWord({
     active: wakeActive,
     names: [aiName, settings?.wake_reading ?? ''],

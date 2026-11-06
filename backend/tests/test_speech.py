@@ -103,6 +103,29 @@ def test_whisper_service_reports_missing_model(tmp_path: Path) -> None:
 # ---------- 音声合成 ----------
 
 
+def test_whisper_stays_on_cpu_after_gpu_fails(tmp_path: Path, monkeypatch) -> None:  # noqa: ANN001
+    """GPU 用のライブラリがないとき、毎回 GPU を試して読み込み直さない（呼びかけが遅れて反応しなくなった不具合）。"""
+    service = WhisperService(tmp_path / "whisper")
+    monkeypatch.setattr("app.speech.stt._cuda_libraries_available", lambda: False)
+    assert service._effective_device("cuda") == "cpu"
+    assert service._fallback_notice() is not None
+    # 知らせるのは最初の1回だけ
+    assert service._fallback_notice() is None
+    assert service._effective_device("cpu") == "cpu"
+
+
+def test_wake_transcription_skips_when_busy(tmp_path: Path) -> None:
+    """呼びかけの聞き取りは、ほかの聞き取り中なら待たずに空で返す（マイクの声を待たせない）。"""
+    import asyncio
+
+    async def run() -> str:
+        service = WhisperService(tmp_path / "whisper")
+        async with service._lock:
+            return (await service.transcribe(b"x", "large-v3-turbo", "cpu", fast=True)).text
+
+    assert asyncio.run(run()) == ""
+
+
 def test_clean_for_speech() -> None:
     text = "**大事**です。詳しくは https://example.com を見て。\n```python\nprint(1)\n```\n# 見出し"
     cleaned = clean_for_speech(text)

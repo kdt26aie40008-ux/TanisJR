@@ -1,0 +1,4 @@
+# NVIDIA の GPU がある PC で、音声認識（faster-whisper）を GPU で動かすためのライブラリ（約1GB）。
+# start.ps1 が NVIDIA の GPU を見つけたときだけ自動で入れる。入っていなければ CPU で動く（遅い）。
+nvidia-cublas-cu12==12.*
+nvidia-cudnn-cu12==9.*

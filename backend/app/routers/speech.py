@@ -85,9 +85,12 @@ async def transcribe(request: Request, fast: bool = False, services: Services = 
     if not audio:
         raise AppError(400, "empty_audio", "音声が空です。もう一度録音してください。")
     settings = services.settings.get()
+    # 呼びかけの聞き取りでは、AI の名前（と読み）を聞き取りやすくする
+    hotwords = " ".join(n for n in (settings.wake_reading, settings.ai_name) if n and n.strip()) if fast else None
     try:
         result = await services.stt.transcribe(
-            audio, settings.stt_model, settings.stt_device, language=settings.language, fast=fast
+            audio, settings.stt_model, settings.stt_device, language=settings.language, fast=fast,
+            hotwords=hotwords or None,
         )
     except SttError as exc:
         raise _stt_error(exc) from exc

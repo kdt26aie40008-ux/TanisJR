@@ -65,6 +65,47 @@ class Transcript:
     notice: str | None = None
 
 
+def _register_cuda_dlls() -> None:
+    """pip で入れた GPU 用ライブラリ（nvidia-cublas-cu12 / nvidia-cudnn-cu12）を読み込めるようにする。
+
+    requirements-gpu.txt で入れた場合だけ見つかる。なければ何もしない（CPU で動く）。
+    """
+    if os.name != "nt":
+        return
+    import sys
+
+    for base in {Path(p) for p in sys.path if p.endswith("site-packages")}:
+        for bin_dir in sorted((base / "nvidia").glob("*/bin")):
+            try:
+                os.add_dll_directory(str(bin_dir))
+            except OSError:
+                continue
+            # CTranslate2 は PATH からも探すので、両方に入れる
+            os.environ["PATH"] = f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"
+
+
+_register_cuda_dlls()
+
+_cuda_libs: bool | None = None
+
+
+def _cuda_libraries_available() -> bool:
+    """faster-whisper が GPU で推論するのに必要な cuBLAS を読み込めるか（Windows 以外は試してみる）。"""
+    global _cuda_libs
+    if _cuda_libs is None:
+        if os.name != "nt":
+            _cuda_libs = True
+        else:
+            import ctypes
+
+            try:
+                ctypes.WinDLL("cublas64_12.dll")
+                _cuda_libs = True
+            except OSError:
+                _cuda_libs = False
+    return _cuda_libs
+
+
 def decode_audio(data: bytes, sampling_rate: int = 16000) -> Any:
     """任意の音声形式（webm/opus, wav, mp3 など）を 16kHz モノラル float32 に変換する（メモリ上のみ）。"""
     import av
@@ -93,7 +134,9 @@ def decode_audio(data: bytes, sampling_rate: int = 16000) -> Any:
 
 class Transcriber(Protocol):
     def status(self) -> dict[str, Any]: ...
-    async def transcribe(self, audio: bytes, model: str, device: str, language: str = "ja", fast: bool = False) -> Transcript: ...
+    async def transcribe(
+        self, audio: bytes, model: str, device: str, language: str = "ja", fast: bool = False, hotwords: str | None = None
+    ) -> Transcript: ...
     async def warmup(self, model: str, device: str) -> bool: ...
     def start_download(self, model: str) -> None: ...
 
@@ -113,6 +156,25 @@ class WhisperService:
         self._loaded: tuple[str, str] | None = None
         self._lock = asyncio.Lock()
         self._job: _DownloadJob | None = None
+        # GPU で認識できなかったら、以後はこの起動中ずっと CPU を使う
+        # （毎回 GPU を試すと、読み込み直しで1回10秒以上かかり、呼びかけにも反応しなくなる）
+        self._cuda_failed = False
+        self._cuda_notice_sent = False
+
+    def _effective_device(self, device: str) -> str:
+        if device != "cuda":
+            return device
+        if not self._cuda_failed and not _cuda_libraries_available():
+            logger.warning("CUDA libraries for Whisper not found; using CPU")
+            self._cuda_failed = True
+        return "cpu" if self._cuda_failed else "cuda"
+
+    def _fallback_notice(self) -> str | None:
+        """GPU から CPU に切り替えたことは、最初の1回だけ知らせる。"""
+        if not self._cuda_failed or self._cuda_notice_sent:
+            return None
+        self._cuda_notice_sent = True
+        return "GPUで音声認識できなかったため、CPUで処理しています（GPU用のライブラリが見つかりません）。"
 
     # ---------- モデル管理 ----------
 
@@ -185,8 +247,9 @@ class WhisperService:
                 )
             except Exception as exc:  # noqa: BLE001  CUDA ライブラリ未導入・GPU メモリ不足など
                 logger.warning("CUDA unavailable for Whisper, falling back to CPU: %s", type(exc).__name__)
-                notice = "GPUで音声認識できなかったため、CPUで処理しました。"
+                self._cuda_failed = True
                 device = "cpu"
+                notice = self._fallback_notice()
         if loaded is None:
             loaded = WhisperModel(
                 model, device="cpu", compute_type="int8",
@@ -197,12 +260,23 @@ class WhisperService:
         self._loaded = (model, device)
         return loaded, device, notice
 
-    def _transcribe_sync(self, audio: bytes, model: str, device: str, language: str = "ja", fast: bool = False) -> Transcript:
+    def _transcribe_sync(
+        self, audio: bytes, model: str, device: str, language: str = "ja", fast: bool = False, hotwords: str | None = None
+    ) -> Transcript:
         started = time.perf_counter()
         samples = decode_audio(audio)
+        requested = device
+        device = self._effective_device(device)
         whisper, used_device, notice = self._load(model, device)
+        if requested == "cuda" and used_device == "cpu":
+            notice = notice or self._fallback_notice()
         # fast: 呼びかけの検出用。精度より速さを優先する
-        options = {"language": language, "beam_size": 1 if fast else 5, "vad_filter": True, "condition_on_previous_text": False}
+        options: dict[str, Any] = {
+            "language": language, "beam_size": 1 if fast else 5, "vad_filter": True, "condition_on_previous_text": False,
+        }
+        if hotwords:
+            # AI の名前を聞き取りやすくする（「うるし」が「うれしい」「ブルシ」になるのを防ぐ）
+            options["hotwords"] = hotwords
         try:
             segments, info = whisper.transcribe(samples, **options)
             text = "".join(s.text for s in segments).strip()
@@ -211,9 +285,10 @@ class WhisperService:
                 raise
             # 推論時に GPU メモリ不足などで失敗した場合は CPU で再実行する
             logger.warning("Whisper CUDA inference failed: %s", type(exc).__name__)
+            self._cuda_failed = True
             self._loaded = None
             whisper, used_device, _ = self._load(model, "cpu")
-            notice = "GPUで音声認識できなかったため、CPUで処理しました。"
+            notice = self._fallback_notice()
             segments, info = whisper.transcribe(samples, **options)
             text = "".join(s.text for s in segments).strip()
         return Transcript(
@@ -225,24 +300,38 @@ class WhisperService:
         import numpy as np
 
         # faster-whisper の初回 import やモデル確認も重いので、すべてワーカースレッドで行う
+        device = self._effective_device(device)
         if self._loaded == (model, device) or not self.installed(model):
             return False
-        whisper, _, _ = self._load(model, device)
+        whisper, used_device, _ = self._load(model, device)
         # 初回推論は内部の初期化で遅いため、短い雑音で一度実行しておく
         noise = (np.random.default_rng(0).standard_normal(16000) * 0.01).astype(np.float32)
-        list(whisper.transcribe(noise, language="ja", beam_size=1, vad_filter=False)[0])
+        try:
+            list(whisper.transcribe(noise, language="ja", beam_size=1, vad_filter=False)[0])
+        except RuntimeError:
+            if used_device != "cuda":
+                raise
+            # GPU 用のライブラリが足りないなど。ここで CPU に切り替えておく
+            self._cuda_failed = True
+            self._loaded = None
+            whisper, _, _ = self._load(model, "cpu")
+            list(whisper.transcribe(noise, language="ja", beam_size=1, vad_filter=False)[0])
         return True
 
     async def warmup(self, model: str, device: str) -> bool:
         """音声会話画面を開いたときに、モデルを先に読み込んでおく。"""
-        if self._loaded == (model, device):
+        if self._loaded == (model, self._effective_device(device)):
             return False
         async with self._lock:
             return await asyncio.to_thread(self._warmup_sync, model, device)
 
     async def transcribe(
-        self, audio: bytes, model: str, device: str, language: str = "ja", fast: bool = False
+        self, audio: bytes, model: str, device: str, language: str = "ja", fast: bool = False, hotwords: str | None = None
     ) -> Transcript:
+        # 呼びかけの聞き取りは、ほかの聞き取り中なら待たずに飛ばす
+        # （マイクのボタンで話した声が、呼びかけの聞き取りの後ろで待たされないように）
+        if fast and self._lock.locked():
+            return Transcript(text="", duration=0.0, elapsed=0.0, device=self._loaded[1] if self._loaded else device)
         # モデルは1つだけ読み込み、同時実行しない（メモリ使用量を抑える）
         async with self._lock:
-            return await asyncio.to_thread(self._transcribe_sync, audio, model, device, language, fast)
+            return await asyncio.to_thread(self._transcribe_sync, audio, model, device, language, fast, hotwords)

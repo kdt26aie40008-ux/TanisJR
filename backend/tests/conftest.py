@@ -126,9 +126,12 @@ class FakeTranscriber:
     def status(self) -> dict:
         return {"models": [], "models_dir": "x", "loaded": None, "download": None}
 
-    async def transcribe(self, audio: bytes, model: str, device: str, language: str = "ja", fast: bool = False):  # noqa: ANN201
+    async def transcribe(  # noqa: ANN201
+        self, audio: bytes, model: str, device: str, language: str = "ja", fast: bool = False, hotwords: str | None = None
+    ):
         from app.speech.stt import Transcript
 
+        self.hotwords = hotwords
         self.calls.append((len(audio), model, device))
         self.options.append((language, fast))
         if self.error:

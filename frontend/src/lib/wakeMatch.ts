@@ -21,7 +21,11 @@ export interface WakeMatch {
  * 名前の前の呼びかけ（「ねえ」など）はあってもなくてもよい。
  */
 export function matchWake(text: string, names: string[]): WakeMatch {
-  const keys = names.map(normalizeSpeech).filter((n) => n.length >= 2)
+  // 1文字の名前は、ひらがな・英字だと他の言葉に紛れるので使わない。漢字1文字（「漆」など）は使う
+  // （読みを「うるし」と登録していても、音声認識が漢字で書くことがあるため）
+  const keys = names
+    .map(normalizeSpeech)
+    .filter((n) => n.length >= 2 || /^[\p{Script=Han}]$/u.test(n))
   // 元の文の位置を保ったまま比べるため、1文字ずつ正規化した位置の対応表を作る
   const map: number[] = []
   let normalized = ''
