@@ -33,6 +33,21 @@ if (-not (Test-Path $Stamp) -or (Get-Content $Stamp) -ne $Hash) {
     if ($LASTEXITCODE -ne 0) { throw 'Python パッケージのインストールに失敗しました。' }
     Set-Content -Path $Stamp -Value $Hash -Encoding ascii
 }
+# NVIDIA の GPU があれば、音声認識を GPU で動かすライブラリも入れる（呼びかけ・マイクの聞き取りが速くなる）
+$GpuReq = Join-Path $Backend 'requirements-gpu.txt'
+$GpuStamp = Join-Path $Backend '.venv\.requirements-gpu.sha256'
+if ((Get-Command nvidia-smi -ErrorAction SilentlyContinue) -and (Test-Path $GpuReq)) {
+    $GpuHash = (Get-FileHash $GpuReq -Algorithm SHA256).Hash
+    if (-not (Test-Path $GpuStamp) -or (Get-Content $GpuStamp) -ne $GpuHash) {
+        Step '音声認識を GPU で動かすライブラリをインストールしています（初回のみ、約1GB）'
+        & $VenvPython -m pip install --disable-pip-version-check -q -r $GpuReq
+        if ($LASTEXITCODE -eq 0) {
+            Set-Content -Path $GpuStamp -Value $GpuHash -Encoding ascii
+        } else {
+            Write-Host '  GPU 用ライブラリを入れられませんでした。音声認識は CPU で動きます（遅くなります）。' -ForegroundColor Yellow
+        }
+    }
+}
 
 # --- フロントエンド ---
 # git pull などで画面のソースや依存パッケージが変わったら、自動で入れ直し・ビルドし直す

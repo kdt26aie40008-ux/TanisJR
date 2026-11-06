@@ -33,6 +33,11 @@ describe('matchWake', () => {
     expect(matchWake('あいうえお', ['あ']).matched).toBe(false)
   })
 
+  it('accepts a one-kanji name, since speech recognition may write the reading in kanji', () => {
+    expect(matchWake('ねえ、漆。', ['漆', 'うるし'])).toEqual({ matched: true, rest: '' })
+    expect(matchWake('ねえウルシ、明日の予定は？', ['漆', 'うるし'])).toEqual({ matched: true, rest: '明日の予定は？' })
+  })
+
   it('normalizes width, case and symbols', () => {
     expect(normalizeSpeech('ＴＡＮＩＳ、タニス！')).toBe('tanisたにす')
   })
