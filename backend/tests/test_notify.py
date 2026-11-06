@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from app.calendar.models import CalendarEvent
 from app.notify.scheduler import due_notifications, message_for
 from tests.conftest import FakeGoogle, FakeNotifier
-from tests.test_calendar import connect
+from tests.test_calendar import connect, google_backend  # noqa: F401  Google 連携として動かす（autouse）
 
 
 def event(eid: str, start: datetime, minutes_long: int = 60, all_day: bool = False) -> CalendarEvent:

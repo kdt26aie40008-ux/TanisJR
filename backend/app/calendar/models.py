@@ -76,6 +76,18 @@ class EventDraft(BaseModel):
             body["reminders"] = {"useDefault": False, "overrides": [{"method": "popup", "minutes": self.reminder_minutes}]}
         return body
 
+    def to_event(self, event_id: str) -> CalendarEvent:
+        """アプリ内カレンダーに保存する形にする（時刻はこの PC のタイムゾーン付き）。"""
+        return CalendarEvent(
+            id=event_id,
+            summary=self.summary,
+            all_day=self.all_day,
+            start=self.start if self.all_day else to_local(self.start).isoformat(),
+            end=self.end if self.all_day else to_local(self.end).isoformat(),
+            location=self.location,
+            description=self.description,
+        )
+
 
 class CalendarEvent(BaseModel):
     id: str

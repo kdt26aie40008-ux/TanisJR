@@ -104,10 +104,20 @@ class CalendarService:
         raw = self._load_secret(TOKEN_KEY)
         return Token.from_json(raw) if raw else None
 
+    # ---------- 保存先の切り替え ----------
+
+    def backend(self) -> str:
+        """local: アプリ内カレンダー（この PC のこのユーザーだけ）/ google: Google カレンダー"""
+        return self.settings.get().calendar_backend
+
+    def is_local(self) -> bool:
+        return self.backend() == "local"
+
     def status(self) -> dict[str, Any]:
         own = self.own_client()
         client = own or self.bundled()
         return {
+            "backend": self.backend(),
             "configured": client is not None,
             # bundled: アプリに同梱された登録を使っている（使う人はログインするだけ）
             "source": None if client is None else ("own" if own else "bundled"),
@@ -172,7 +182,49 @@ class CalendarService:
 
     # ---------- 予定 ----------
 
+    # ---------- アプリ内カレンダー ----------
+    # 予定は内容をすべて暗号化して、この Windows ユーザーのデータフォルダーにだけ保存する。
+    # 共有・招待・公開の機能は持たない（他のユーザーの予定が見えることはない）。
+
+    def _local_all(self) -> list[CalendarEvent]:
+        with self.db.transaction() as conn:
+            rows = conn.execute("SELECT data FROM local_events").fetchall()
+        return [CalendarEvent.model_validate_json(self.vault.decrypt(r["data"])) for r in rows]
+
+    def _local_get(self, event_id: str) -> CalendarEvent:
+        with self.db.transaction() as conn:
+            row = conn.execute("SELECT data FROM local_events WHERE id = ?", (event_id,)).fetchone()
+        if row is None:
+            raise CalendarError("予定が見つかりません。すでに削除された可能性があります。", "event_not_found", 404)
+        return CalendarEvent.model_validate_json(self.vault.decrypt(row["data"]))
+
+    def _local_save(self, event: CalendarEvent) -> None:
+        ts = now_iso()
+        with self.db.transaction() as conn:
+            conn.execute(
+                "INSERT INTO local_events (id, data, created_at, updated_at) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at",
+                (event.id, self.vault.encrypt(event.model_dump_json(exclude={"notify_minutes"})), ts, ts),
+            )
+
+    def _local_delete(self, event_id: str) -> None:
+        with self.db.transaction() as conn:
+            if conn.execute("DELETE FROM local_events WHERE id = ?", (event_id,)).rowcount == 0:
+                raise CalendarError("予定が見つかりません。すでに削除された可能性があります。", "event_not_found", 404)
+            conn.execute("DELETE FROM calendar_cache WHERE event_id = ?", (event_id,))
+            conn.execute("DELETE FROM event_notify WHERE event_id = ?", (event_id,))
+
+    # ---------- 予定 ----------
+
     async def list_events(self, start: datetime, end: datetime, limit: int = 250) -> list[CalendarEvent]:
+        overrides = self.notify_overrides()
+        if self.is_local():
+            # 期間に少しでも重なる予定を、開始の早い順に返す
+            events = sorted(
+                (e for e in self._local_all() if e.start_dt() < end and e.end_dt() > start),
+                key=lambda e: e.start_dt(),
+            )[:limit]
+            return [e.model_copy(update={"notify_minutes": overrides.get(e.id)}) for e in events]
         data = await self._api(
             "GET",
             "/events",
@@ -185,10 +237,11 @@ class CalendarService:
             },
         )
         events = [CalendarEvent.from_google(item) for item in (data or {}).get("items", []) if item.get("status") != "cancelled"]
-        overrides = self.notify_overrides()
         return [e.model_copy(update={"notify_minutes": overrides.get(e.id)}) for e in events]
 
     async def get_event(self, event_id: str) -> CalendarEvent:
+        if self.is_local():
+            return self._local_get(event_id)
         return CalendarEvent.from_google(await self._api("GET", f"/events/{event_id}"))
 
     async def upcoming(self, days: int = 7) -> list[CalendarEvent]:
@@ -259,7 +312,9 @@ class CalendarService:
         op = self._claim(op_id)
         try:
             result_id: str | None = None
-            if op.action == "create" and op.draft:
+            if self.is_local():
+                result_id = self._apply_local(op)
+            elif op.action == "create" and op.draft:
                 created = await self._api("POST", "/events", json=op.draft.to_google())
                 result_id = str(created["id"])
             elif op.action == "update" and op.draft:
@@ -279,6 +334,20 @@ class CalendarService:
         result = self.get_operation(op_id)
         assert result is not None
         return result
+
+    def _apply_local(self, op: Operation) -> str | None:
+        if op.action == "create" and op.draft:
+            event_id = uuid.uuid4().hex
+            self._local_save(op.draft.to_event(event_id))
+            return event_id
+        if op.action == "update" and op.draft and op.event_id:
+            self._local_get(op.event_id)  # 存在しなければ失敗として記録する
+            self._local_save(op.draft.to_event(op.event_id))
+            return op.event_id
+        if op.action == "delete" and op.event_id:
+            self._local_delete(op.event_id)
+            return op.event_id
+        return None
 
     def reject(self, op_id: str) -> Operation:
         op = self.get_operation(op_id)
@@ -338,4 +407,7 @@ class CalendarService:
         return [CalendarEvent.model_validate_json(self.vault.decrypt(r["event"])) for r in rows]
 
     def is_connected(self) -> bool:
+        """予定を使える状態か（アプリ内カレンダーは常に使える）。"""
+        if self.is_local():
+            return True
         return self._token() is not None and self.client() is not None

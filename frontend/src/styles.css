@@ -757,6 +757,97 @@ textarea {
 .settings-page h1 {
   margin-bottom: 0;
 }
+.month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 0.6em;
+}
+.month-week {
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--muted);
+  padding: 0.2em 0;
+}
+.month-week.sun {
+  color: var(--chat-main);
+}
+.month-week.sat {
+  color: var(--settings-main);
+}
+.month-day {
+  font: inherit;
+  text-align: left;
+  min-height: 5.2em;
+  padding: 0.3em 0.4em;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  transition: border-color 0.15s, background 0.15s;
+}
+.month-day:hover {
+  border-color: var(--sec-main);
+}
+.month-day.outside {
+  opacity: 0.45;
+}
+.month-day.today .month-date {
+  background: var(--sec-main);
+  color: var(--on-color);
+}
+.month-day.selected {
+  border-color: var(--sec-main);
+  background: var(--sec-tint);
+}
+.month-date {
+  font-size: 0.8rem;
+  font-weight: 700;
+  width: 1.8em;
+  height: 1.8em;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+}
+.month-chip {
+  font-size: 0.7rem;
+  line-height: 1.4;
+  padding: 0 0.4em;
+  border-radius: 6px;
+  background: var(--sec-tint);
+  color: var(--sec-deep);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.month-more {
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+.month-detail {
+  margin-top: 1em;
+  padding-top: 0.8em;
+  border-top: 1px solid var(--border);
+}
+.month-detail h3 {
+  margin: 0;
+  color: var(--text);
+}
+@media (max-width: 860px) {
+  .month-day {
+    min-height: 3.6em;
+  }
+  .month-chip {
+    font-size: 0;
+    height: 6px;
+    padding: 0;
+  }
+}
 .google-login {
   padding: 0.6em 1.6em;
   font-size: 1rem;

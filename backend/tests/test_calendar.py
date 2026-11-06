@@ -15,6 +15,12 @@ from tests.conftest import FakeGoogle, FakeOllama, sse_events
 CLIENT_JSON = {"installed": {"client_id": "123-abc.apps.googleusercontent.com", "client_secret": "GOCSPX-secret", "redirect_uris": ["http://localhost"]}}
 
 
+@pytest.fixture(autouse=True)
+def google_backend(client: TestClient) -> None:
+    """このファイルは Google カレンダー連携のテスト（既定はアプリ内カレンダー）。"""
+    assert client.put("/api/settings", json={"calendar_backend": "google"}).status_code == 200
+
+
 def local(dt: datetime) -> str:
     return dt.astimezone().isoformat()
 
