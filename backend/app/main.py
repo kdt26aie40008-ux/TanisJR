@@ -164,7 +164,7 @@ def create_app(
         await services.tts.aclose()
         await services.google.aclose()
 
-    app = FastAPI(title="Personal Twin AI", version=__version__, lifespan=lifespan, docs_url=None, redoc_url=None)
+    app = FastAPI(title="AnotherMe", version=__version__, lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.services = services
 
     # 後に追加したものが外側になる: Host検証 → Origin検証 → ルーター
@@ -284,7 +284,7 @@ def main() -> None:
 
     from app.system import wait_for_port_free
 
-    parser = argparse.ArgumentParser(description="第二の自分AI サーバー")
+    parser = argparse.ArgumentParser(description="AnotherMe サーバー")
     parser.add_argument("--background", action="store_true", help="コンソールなしで動かし、ログをファイルに書く")
     parser.add_argument("--wait-for-port", action="store_true", help="再起動時、前のプロセスの終了を待つ")
     args = parser.parse_args()

@@ -64,7 +64,7 @@ def enable_autostart(directory: Path | None = None) -> Path:
         "TWIN_LNK_TARGET": str(background_python()),
         "TWIN_LNK_ARGS": "-m app.main --background",
         "TWIN_LNK_WORKDIR": str(BACKEND_DIR),
-        "TWIN_LNK_DESC": "Personal Twin AI background service",
+        "TWIN_LNK_DESC": "AnotherMe background service",
     }
     result = subprocess.run(
         [str(POWERSHELL), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", "-"],

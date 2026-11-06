@@ -1,7 +1,7 @@
 {
-  "name": "第二の自分AI",
-  "short_name": "Twin",
-  "description": "あなたを理解して、ときには言い返してくれる、PC の中だけで動く「第二の自分」",
+  "name": "AnotherMe",
+  "short_name": "AnotherMe",
+  "description": "あなたを理解して、ときには言い返してくれる、PC の中だけで動く「もう一人の私」",
   "lang": "ja",
   "start_url": "/#/chat",
   "scope": "/",
@@ -9,6 +9,7 @@
   "background_color": "#fbf7f2",
   "theme_color": "#e5603f",
   "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
     { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
     { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }

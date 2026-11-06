@@ -1,9 +1,9 @@
-# TanisJr
-生成AIの共同制作用リポジトリー！！
+<p align="center"><img src="frontend/public/icons/icon-512.png" alt="" width="112" /></p>
 
-## 第二の自分AI（Personal Twin AI）
+# AnotherMe（もう一人の私）
+生成AIの共同制作用リポジトリー！！（リポジトリー名: TanisJr）
 
-あなたの性格・価値観・話し方を理解し、ときには根拠を示して反論してくれる「第二の自分」となるローカルAIです。
+あなたの性格・価値観・話し方を理解し、ときには根拠を示して反論してくれる「もう一人の私」となるローカルAIです（旧称: 第二の自分AI / Personal Twin AI）。
 AIの処理はすべてこのPC上（Ollama）で行い、有料APIは使いません。
 
 - 設計: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)

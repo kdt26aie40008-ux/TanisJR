@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-  第二の自分AI を起動する（初回は依存関係の導入とビルドを自動で行う）。
+  AnotherMe（もう一人の私）を起動する（初回は依存関係の導入とビルドを自動で行う）。
 .PARAMETER Rebuild
   フロントエンドを強制的に再ビルドする。
 .PARAMETER SetupOnly

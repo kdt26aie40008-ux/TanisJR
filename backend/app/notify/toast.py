@@ -53,7 +53,7 @@ class WindowsToastNotifier:
             "TWIN_TOAST_TITLE": title[:100],
             "TWIN_TOAST_BODY": body[:250],
             "TWIN_TOAST_APPID": APP_ID,
-            "TWIN_TOAST_APPNAME": "第二の自分AI",
+            "TWIN_TOAST_APPNAME": "AnotherMe",
             "TWIN_TOAST_CLOSE": "閉じる",
         }
         result = subprocess.run(
