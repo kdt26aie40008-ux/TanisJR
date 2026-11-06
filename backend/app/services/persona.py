@@ -81,7 +81,9 @@ def build_system_prompt(
     extra: str = "",
     language: str = "ja",
     time_of_day: str | None = None,
+    final: str = "",
 ) -> str:
+    """final: いちばん最後に置く、今回の返事だけの指示（予定の確認など。最後に書くほど守られやすい）。"""
     today = today or date.today()
     principles = PRINCIPLES.replace("{language}", LANGUAGE_NAMES.get(language, "日本語"))
     clock = f" 今の時刻は {time_of_day}（{time_period(time_of_day)}）です。" if time_of_day else ""
@@ -122,4 +124,6 @@ def build_system_prompt(
     if extra:
         lines += ["", extra]
     lines += ["", closing_reminder(ai_name, user_name, time_period(time_of_day) if time_of_day else None)]
+    if final:
+        lines += ["", final]
     return "\n".join(lines)

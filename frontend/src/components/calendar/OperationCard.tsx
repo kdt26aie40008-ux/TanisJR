@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api, errorMessage } from '../../api/client'
 import type { CalendarOperation, EventDraft } from '../../api/types'
 import { formatRange } from '../../lib/datetime'
@@ -47,8 +47,13 @@ export function OperationCard({ operation, onChanged }: Props) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
+  // 会話の返事で決まったときは、外から渡される最新の状態に合わせる
+  useEffect(() => {
+    setOp(operation)
+  }, [operation])
+
   const decide = async (approve: boolean) => {
-    if (approve && op.action === 'delete' && !window.confirm(`「${op.target?.summary ?? '予定'}」を Google カレンダーから削除します。よろしいですか？`)) {
+    if (approve && op.action === 'delete' && !window.confirm(`「${op.target?.summary ?? '予定'}」をカレンダーから削除します。よろしいですか？`)) {
       return
     }
     setBusy(true)
@@ -94,7 +99,11 @@ export function OperationCard({ operation, onChanged }: Props) {
       {op.draft && <DraftDetails draft={op.draft} />}
       {op.status === 'pending' && (
         <>
-          <p className="hint">内容を確認してください。「承認して実行」を押すまで Google カレンダーは変更されません。</p>
+          <p className="hint">
+            {op.source === 'ai'
+              ? '会話で「うん」「お願い」と答えるか、「承認して実行」を押すと反映されます。「やめとく」と答えるか「却下」を押すと取り消します。'
+              : '内容を確認してください。「承認して実行」を押すまでカレンダーは変更されません。'}
+          </p>
           <div className="actions">
             <button className="btn" disabled={busy} onClick={() => void decide(false)}>
               却下

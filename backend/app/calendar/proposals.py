@@ -10,6 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ValidationError
 
+from app.calendar.conversation import date_table
 from app.calendar.models import CalendarEvent, EventDraft, OperationCreate, local_now, to_local
 from app.llm.ollama import OllamaClient
 
@@ -72,6 +73,8 @@ def build_messages(user_text: str, events: list[CalendarEvent]) -> list[dict[str
     listing = "\n".join(f"- id={e.id} | {e.start} 〜 {e.end} | {e.summary}" for e in events) or "（なし）"
     context = (
         f"今日: {now:%Y-%m-%d}（{WEEKDAYS[now.weekday()]}） 現在時刻 {now:%H:%M}\n\n"
+        # 「来週月曜」などの日付の取り違えを防ぐため、日付と曜日の表を渡す
+        f"{date_table()}\n\n"
         f"## 既存の予定（直近）\n{listing}\n\n"
         f"## ユーザーの発言\n<user>\n{user_text}\n</user>"
     )
@@ -126,26 +129,33 @@ def parse_proposal(raw: str, events: list[CalendarEvent]) -> OperationCreate | N
         return None
 
 
+_REMINDER_HINT = re.compile(r"通知|知らせ|リマインド|アラーム|分前|時間前|日前")
+
+
 async def propose_from_text(
     client: OllamaClient, model: str, user_text: str, events: list[CalendarEvent]
 ) -> OperationCreate | None:
     raw = await client.chat_once(
         model, build_messages(user_text, events), {"temperature": 0.0, "num_ctx": 4096}, response_format=RESPONSE_SCHEMA
     )
-    return parse_proposal(raw, events)
+    proposal = parse_proposal(raw, events)
+    # 通知について何も言っていないのに、モデルが通知の時間（0 など）を埋めることがあるので消す
+    if proposal and proposal.draft and not _REMINDER_HINT.search(user_text):
+        proposal.draft.reminder_minutes = None
+    return proposal
 
 
 def calendar_context(events: list[CalendarEvent]) -> str:
     """会話用のシステムプロンプトに追加する、直近の予定と操作のルール。"""
     lines = [
-        "## ユーザーの Google カレンダー（直近7日）",
+        "## ユーザーのカレンダー（直近7日）",
         *(
             [f"- {e.start[:16].replace('T', ' ')} 〜 {e.end[11:16] if not e.all_day else '終日'} {e.summary}" for e in events]
             or ["（予定はありません）"]
         ),
         "",
         "## カレンダー操作のルール",
-        "- あなたは予定を直接追加・変更・削除できない。依頼されたら内容を確認するように答える。",
-        "- 画面に表示される確認カードでユーザーが「承認」を押したときだけ実行される。まだ実行されていないので「追加しました」「削除しました」とは言わない。",
+        "- あなたは予定を直接追加・変更・削除できない。アプリが下書きを作り、ユーザーが会話で了承するか、確認カードのボタンを押したときだけ実行される。",
+        "- アプリからの指示で「実行した」と伝えられたとき以外は、「追加しました」「削除しました」とは言わない。",
     ]
     return "\n".join(lines)

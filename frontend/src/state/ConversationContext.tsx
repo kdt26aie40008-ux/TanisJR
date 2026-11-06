@@ -140,6 +140,16 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
           patchMessage(assistantId, (m) => ({ ...m, memories: event.items }))
         } else if (event.type === 'calendar_proposal') {
           patchMessage(assistantId, (m) => ({ ...m, proposals: [...(m.proposals ?? []), event.operation] }))
+        } else if (event.type === 'calendar_decided') {
+          // 前の返事に出ている確認カードを、会話で決まった結果に更新する
+          const decided = event.operation
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.proposals?.some((p) => p.id === decided.id)
+                ? { ...m, proposals: m.proposals.map((p) => (p.id === decided.id ? decided : p)) }
+                : m,
+            ),
+          )
         } else if (event.type === 'notice') {
           setNotice(event.message)
         } else if (event.type === 'error') {

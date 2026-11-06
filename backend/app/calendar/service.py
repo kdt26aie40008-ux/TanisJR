@@ -11,7 +11,7 @@ import logging
 import secrets
 import time
 import uuid
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -278,6 +278,33 @@ class CalendarService:
         with self.db.transaction() as conn:
             row = conn.execute("SELECT * FROM calendar_operations WHERE id = ?", (op_id,)).fetchone()
         return self._to_operation(row) if row else None
+
+    def awaiting_confirmation(self, max_age_minutes: int = 10) -> Operation | None:
+        """会話の中で確認中の、AI が提案した操作（最新の1件）。時間がたったものは確認しない。"""
+        # created_at は now_iso()（UTC）で保存しているので、比べる値も UTC にそろえる
+        cutoff = (datetime.now(UTC) - timedelta(minutes=max_age_minutes)).isoformat(timespec="seconds")
+        with self.db.transaction() as conn:
+            row = conn.execute(
+                "SELECT * FROM calendar_operations WHERE status = 'pending' AND source = 'ai' AND created_at >= ? "
+                "ORDER BY created_at DESC, rowid DESC LIMIT 1",
+                (cutoff,),
+            ).fetchone()
+        return self._to_operation(row) if row else None
+
+    def set_reminder(self, op_id: str, minutes: int | None) -> Operation:
+        """確認中の操作に、会話で聞いた通知の時間を入れる。"""
+        op = self.get_operation(op_id)
+        if op is None or op.draft is None:
+            raise CalendarError("指定された操作が見つかりません。", "operation_not_found", 404)
+        draft = op.draft.model_copy(update={"reminder_minutes": minutes})
+        with self.db.transaction() as conn:
+            conn.execute(
+                "UPDATE calendar_operations SET draft = ? WHERE id = ? AND status = 'pending'",
+                (self.vault.encrypt(draft.model_dump_json()), op_id),
+            )
+        result = self.get_operation(op_id)
+        assert result is not None
+        return result
 
     def list_operations(self, status: str | None = "pending") -> list[Operation]:
         sql, params = "SELECT * FROM calendar_operations", ()
