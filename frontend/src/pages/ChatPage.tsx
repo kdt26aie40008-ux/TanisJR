@@ -12,12 +12,23 @@ import { ModelStatusBanner } from '../components/ModelStatusBanner'
 import { SaveToggle } from '../components/SaveToggle'
 import { detectEmotion, type Emotion } from '../lib/emotion'
 import { EndpointDetector } from '../lib/endpointing'
+import { SpeechFilter } from '../lib/mathText'
 import { SentenceChunker } from '../lib/sentences'
 import { useConversation } from '../state/ConversationContext'
 import { useAvatars } from '../state/useActiveAvatar'
 import { useWakeWord } from '../state/useWakeWord'
 
 const MAX_INPUT = 8000
+
+/** 文章全体を文ごとに分けて読み上げる（数式は言葉にし、コードや書式の記号は読まない） */
+function speakAll(text: string, speak: (sentence: string) => void): void {
+  const chunker = new SentenceChunker()
+  const filter = new SpeechFilter()
+  for (const sentence of [...chunker.push(text), ...chunker.flush()]) {
+    const spoken = filter.next(sentence)
+    if (spoken) speak(spoken)
+  }
+}
 
 /** 相づち（同じものが続かないように選ぶ） */
 const BACKCHANNELS = ['うん。', 'うんうん。', 'なるほど。', 'そっか。', 'ふむふむ。']
@@ -151,8 +162,7 @@ export function ChatPage({ aiName, visible = true }: Props) {
   /** 過去の発言をもう一度読み上げる（長文は文ごとに分けて合成する） */
   const replay = (text: string) => {
     player.stop()
-    const chunker = new SentenceChunker()
-    ;[...chunker.push(text), ...chunker.flush()].forEach(speak)
+    speakAll(text, speak)
   }
 
   /**
@@ -170,8 +180,11 @@ export function ChatPage({ aiName, visible = true }: Props) {
     const chunker = new SentenceChunker({ eagerFirst: true })
     // 止められたり割り込まれたりした後に届いた続きは読み上げない
     const turn = ++turnRef.current
+    // 数式は言葉にして読み、コードや書式の記号は読まない
+    const filter = new SpeechFilter()
     const speakTurn = (sentence: string) => {
-      if (turnRef.current === turn) speak(sentence)
+      const spoken = filter.next(sentence)
+      if (spoken && turnRef.current === turn) speak(spoken)
     }
     const result = await send(trimmed, {
       onToken: readAloud ? (t) => chunker.push(t).forEach(speakTurn) : undefined,
@@ -395,8 +408,7 @@ export function ChatPage({ aiName, visible = true }: Props) {
         say(result.text)
         lastActivityRef.current = Date.now()
         if (readAloud) {
-          const chunker = new SentenceChunker()
-          ;[...chunker.push(result.text), ...chunker.flush()].forEach((s) => player.enqueue(s))
+          speakAll(result.text, (s) => player.enqueue(s))
         } else {
           setEmotion(detectEmotion(result.text))
         }
