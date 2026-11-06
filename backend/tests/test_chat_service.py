@@ -67,6 +67,27 @@ def test_system_prompt_without_profile_forbids_guessing() -> None:
     assert "関連する記憶" not in prompt
 
 
+def test_system_prompt_conversation_style_and_closing_reminder() -> None:
+    from app.schemas import ProfileEntry
+
+    name = ProfileEntry(
+        key="self.user_name", question="呼んでほしい名前", content="カッパ", source="user_edit", importance=10,
+        confirmation_status="confirmed", created_at="", updated_at="",
+    )
+    prompt = build_system_prompt("タニス", [name], time_of_day="21:30", extra="## カレンダー")
+    assert "## 会話のしかた" in prompt
+    assert "ユーザーの名前（呼び方）は「カッパ」" in prompt
+    assert "今の時刻は 21:30（夜）" in prompt
+    # 念押しは最後に置く（カレンダーなどの追加情報より後）
+    assert prompt.rstrip().splitlines()[0] == "あなたの名前は「タニス」です。"
+    closing = prompt[prompt.index("## 最後に"):]
+    assert prompt.index("## カレンダー") < prompt.index("## 最後に")
+    assert "ユーザー（カッパ）とは別の存在" in closing
+    assert "今は夜なので「おはよう」と言わない" in closing
+    # 朝は「おはよう」を止めない
+    assert "「おはよう」と言わない" not in build_system_prompt("タニス", [], time_of_day="07:30").split("## 最後に")[1]
+
+
 def test_system_prompt_has_date_and_no_realtime_rule() -> None:
     from datetime import date
 

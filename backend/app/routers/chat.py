@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends
@@ -77,7 +78,13 @@ async def chat(body: ChatRequest, services: Services = Depends(get_services)) ->
             calendar_notice = f"カレンダーを読み込めませんでした: {exc.message}"
 
     system_prompt = build_system_prompt(
-        settings.ai_name, profile, memory_lines, extra=calendar_extra, language=settings.language
+        settings.ai_name,
+        profile,
+        memory_lines,
+        extra=calendar_extra,
+        language=settings.language,
+        # 時刻に合ったあいさつをするため
+        time_of_day=datetime.now().strftime("%H:%M"),
     )
     turn = _Turn()
 

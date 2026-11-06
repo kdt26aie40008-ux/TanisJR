@@ -54,7 +54,9 @@ async def proactive_next(body: ProactiveRequest, services: Services = Depends(ge
 
     profile = services.profile.list()
     user_name = next((e.content for e in profile if e.key == "self.user_name"), "")
-    system_prompt = build_system_prompt(settings.ai_name, profile, language=settings.language)
+    system_prompt = build_system_prompt(
+        settings.ai_name, profile, language=settings.language, time_of_day=now.strftime("%H:%M")
+    )
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": proactive.build_instruction(occasion, user_name)},
