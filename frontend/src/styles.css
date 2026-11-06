@@ -381,6 +381,17 @@ textarea {
   font-size: 1.2rem;
   letter-spacing: 0.04em;
 }
+.brand-name {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.brand-app {
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
 .brand-mark {
   width: 2em;
   height: 2em;

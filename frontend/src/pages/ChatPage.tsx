@@ -10,6 +10,7 @@ import type { Activity } from '../components/avatar/AvatarViewer'
 import { MessageList } from '../components/MessageList'
 import { ModelStatusBanner } from '../components/ModelStatusBanner'
 import { SaveToggle } from '../components/SaveToggle'
+import { chooseBackchannel } from '../lib/backchannel'
 import { detectEmotion, type Emotion } from '../lib/emotion'
 import { EndpointDetector } from '../lib/endpointing'
 import { SpeechFilter } from '../lib/mathText'
@@ -31,9 +32,6 @@ function speakAll(text: string, speak: (sentence: string) => void): void {
     if (spoken) speak(spoken)
   }
 }
-
-/** 相づち（同じものが続かないように選ぶ） */
-const BACKCHANNELS = ['うん。', 'うんうん。', 'なるほど。', 'そっか。', 'ふむふむ。']
 
 type Phase = 'idle' | 'recording' | 'transcribing' | 'thinking' | 'speaking'
 
@@ -204,12 +202,12 @@ export function ChatPage({ aiName, visible = true }: Props) {
     return result
   }
 
-  /** ふるまい「相づち」: 声で話し終えたら、考える前に短く返す */
+  /** ふるまい「相づち」: 声で話し終えたら、考える前に、話した内容に合った相づちを短く返す */
   const lastBackchannel = useRef('')
-  const backchannel = (): boolean => {
+  const backchannel = (heard: string): boolean => {
     if (!readAloud || !(settings?.behavior_backchannel ?? true)) return false
-    const choices = BACKCHANNELS.filter((b) => b !== lastBackchannel.current)
-    const word = choices[Math.floor(Math.random() * choices.length)]
+    const word = chooseBackchannel(heard, lastBackchannel.current)
+    if (!word) return false
     lastBackchannel.current = word
     player.stop()
     speak(word)
@@ -325,7 +323,7 @@ export function ChatPage({ aiName, visible = true }: Props) {
         return
       }
       // 聞き取りの間を埋めるため、送る前に相づちを入れる
-      const backchanneled = autoSend && backchannel()
+      const backchanneled = autoSend && backchannel(result.text)
       if (autoSend) {
         voiceTurnRef.current = true
         const reply = await talk(result.text, { afterBackchannel: backchanneled })

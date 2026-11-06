@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-第二の自分AI（Personal Twin AI）。作業前に必ず読むこと:
+AnotherMe（もう一人の私。旧称: 第二の自分AI / Personal Twin AI）。作業前に必ず読むこと:
 
 - 設計方針: `docs/ARCHITECTURE.md`
 - 進捗・未完了タスク・既知の問題: `docs/PROGRESS.md`（作業後に更新する）

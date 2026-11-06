@@ -113,7 +113,10 @@ function MainLayout({ aiName, onAiNameChange, onRestored }: LayoutProps) {
           <span className="brand-mark" aria-hidden>
             {Array.from(aiName)[0] ?? ''}
           </span>
-          <span className="brand-name">{aiName}</span>
+          <span className="brand-name">
+            {aiName}
+            <small className="brand-app">AnotherMe</small>
+          </span>
         </div>
         <ul>
           {ROUTES.map((r) => (

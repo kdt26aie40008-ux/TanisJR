@@ -159,7 +159,7 @@ def reject(op_id: str = OperationId, services: Services = Depends(get_services))
 
 @router.post("/notifications/test")
 async def test_notification(services: Services = Depends(get_services)) -> dict:
-    shown = await services.notifier.notify("通知のテスト", "第二の自分AIからの通知はこのように表示されます。")
+    shown = await services.notifier.notify("通知のテスト", "AnotherMe からの通知はこのように表示されます。")
     if not shown:
         raise AppError(500, "notify_failed", "通知を表示できませんでした。Windows の通知設定を確認してください。")
     return {"shown": True}

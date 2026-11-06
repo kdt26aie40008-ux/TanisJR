@@ -1,4 +1,6 @@
-# 第二の自分AI（Personal Twin AI）設計書
+# AnotherMe（もう一人の私）設計書
+
+> 旧称: 第二の自分AI（Personal Twin AI）。データの保存先（`%LOCALAPPDATA%\PersonalTwinAI`）・暗号鍵の保護に使う識別子・自動起動のショートカット名（`PersonalTwinAI.lnk`）は、既存のデータと設定を引き継ぐため旧名のまま。
 
 > このファイルは設計方針の正本。コンテキストが途切れても開発を継続できるよう、設計判断はここに記録する。
 > 進捗・未完了タスクは [PROGRESS.md](PROGRESS.md) を参照。
