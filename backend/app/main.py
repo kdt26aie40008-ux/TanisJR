@@ -40,6 +40,9 @@ from app.routers import assistant, avatars, chat, data, health, models, settings
 from app.routers import calendar as calendar_router
 from app.routers import system as system_router
 from app.routers import training as training_router
+from app.routers import scene as scene_router
+from app.backgrounds import BackgroundStore
+from app.services.weather import WeatherService
 from app.training.data import TrainingDataRepository
 from app.training.runner import TrainingManager
 from app.routers import memories as memories_router
@@ -94,6 +97,7 @@ def create_app(
     allow_process_control: bool = True,
     background: bool = False,
     aivis_engine_path: Path | None = None,
+    weather_transport: httpx.AsyncBaseTransport | None = None,
 ) -> FastAPI:
     config = config or load_config()
     db = Database(config.db_path)
@@ -132,6 +136,8 @@ def create_app(
         training=TrainingManager(
             db, vault, settings_repo, training_data, ollama, config.data_dir / "training" / "runs", config.models_dir
         ),
+        weather=WeatherService(transport=weather_transport),
+        backgrounds=BackgroundStore(config.data_dir / "backgrounds"),
         scheduler=NotificationScheduler(db, settings_repo, calendar, notifier),
         startup_dir=startup_dir,
         allow_process_control=allow_process_control,
@@ -163,6 +169,7 @@ def create_app(
         await services.ollama.aclose()
         await services.tts.aclose()
         await services.google.aclose()
+        await services.weather.aclose()
 
     app = FastAPI(title="AnotherMe", version=__version__, lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.services = services
@@ -208,7 +215,7 @@ def create_app(
 
     for module in (
         health, setup, chat, settings, models, memories_router, data, speech, avatars, calendar_router, system_router, training_router,
-        assistant,
+        assistant, scene_router,
     ):
         app.include_router(module.router)
 

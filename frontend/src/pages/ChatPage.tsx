@@ -2,7 +2,7 @@ import { Mic, Send, Square, SquarePen } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { api, errorMessage } from '../api/client'
-import type { AppSettings, SpeakersResponse, SttStatus } from '../api/types'
+import type { AppSettings, Scene, SpeakersResponse, SttStatus } from '../api/types'
 import { Recorder, RecorderError } from '../audio/Recorder'
 import { SpeechPlayer } from '../audio/SpeechPlayer'
 import { AvatarStage } from '../components/avatar/AvatarStage'
@@ -10,6 +10,8 @@ import type { Activity } from '../components/avatar/AvatarViewer'
 import { MessageList } from '../components/MessageList'
 import { ModelStatusBanner } from '../components/ModelStatusBanner'
 import { SaveToggle } from '../components/SaveToggle'
+import { SceneBackdrop } from '../components/scene/SceneBackdrop'
+import { skyIcon } from '../lib/sceneLook'
 import { chooseBackchannel } from '../lib/backchannel'
 import { detectEmotion, type Emotion } from '../lib/emotion'
 import { EndpointDetector } from '../lib/endpointing'
@@ -22,6 +24,8 @@ import { useWakeWord } from '../state/useWakeWord'
 const MAX_INPUT = 8000
 /** 名前を呼んで話し始めたら、この間は名前を呼ばなくても続けて話せる（最後のやりとりから数える） */
 export const CONVERSATION_MS = 5 * 60_000
+/** 名前だけ呼ばれたときの返事 */
+export const WAKE_REPLIES = ['なーに？', 'はーい、なに？', '呼んだ？', 'うん、どうしたの？']
 
 /** 文章全体を文ごとに分けて読み上げる（数式は言葉にし、コードや書式の記号は読まない） */
 function speakAll(text: string, speak: (sentence: string) => void): void {
@@ -109,6 +113,16 @@ export function ChatPage({ aiName, visible = true }: Props) {
     api.getSettings().then(setSettings, () => undefined)
     api.sttStatus().then(setStt, () => undefined)
     api.speakers().then(setSpeakers, () => undefined)
+  }, [visible])
+
+  // アバターのいる場所（背景）と天気。時間帯で変わるので、開いている間は5分ごとに読み直す
+  const [scene, setScene] = useState<Scene | null>(null)
+  useEffect(() => {
+    if (!visible) return
+    const load = () => api.scene().then((r) => setScene(r.scene), () => undefined)
+    load()
+    const id = window.setInterval(load, 5 * 60_000)
+    return () => window.clearInterval(id)
   }, [visible])
 
   useEffect(() => {
@@ -287,7 +301,17 @@ export function ChatPage({ aiName, visible = true }: Props) {
         if (reply.failed) endConversation()
       })
     } else {
-      void startRecording(Date.now() + CONVERSATION_MS)
+      // 名前だけ呼ばれたら「なーに？」と返事をしてから聞く
+      const reply = WAKE_REPLIES[Math.floor(Math.random() * WAKE_REPLIES.length)]
+      say(reply)
+      setEmotion('happy')
+      if (readAloud) {
+        speak(reply)
+        // 返事を話し終えたら聞き取りを始める（自分の声を拾わないように）
+        setRelisten(true)
+      } else {
+        void startRecording(Date.now() + CONVERSATION_MS)
+      }
     }
   }
 
@@ -534,27 +558,13 @@ export function ChatPage({ aiName, visible = true }: Props) {
           : '話し終わったら押してください'
         : '声で話す'
 
+  const weather = scene?.weather
   return (
-    <section className="page chat-page">
-      <aside className="chat-stage" aria-label={`${aiName} のようす`}>
-        <div className="stage-top">
-          <span className={`status-pill phase-${shownPhase}`} role="status" aria-live="polite">
-            <span className="status-dot" aria-hidden />
-            {shownPhase === 'recording' && autoStop
-              ? '聞いています…（黙ると送ります）'
-              : shownPhase === 'idle' && waitingForCall
-                ? `「ねえ、${aiName}」で呼んでね`
-                : PHASE_LABELS[shownPhase]}
-          </span>
-        </div>
-        {waitingForCall &&
-          createPortal(
-            <div className="wake-indicator" role="status">
-              <Mic size={14} aria-hidden />
-              呼ばれるのを待っています（マイク使用中）
-            </div>,
-            document.body,
-          )}
+    <section className="page chat-page immersive">
+      {/* アバターのいる場所（時間帯と天気で変わる） */}
+      <SceneBackdrop scene={scene} />
+
+      <div className="stage-avatar" aria-label={`${aiName} のようす`}>
         {visible ? (
           <AvatarStage
             avatar={avatar}
@@ -564,6 +574,7 @@ export function ChatPage({ aiName, visible = true }: Props) {
             nod={settings?.behavior_nod ?? true}
             gaze={settings?.behavior_gaze ?? true}
             getListenLevel={() => recorderRef.current?.level() ?? 0}
+            framing="wide"
             emptyMessage={
               <>
                 まだすがたがありません。<a href="#/avatar">「すがた」</a>で選ぶと、ここに {aiName} が現れます。
@@ -573,39 +584,107 @@ export function ChatPage({ aiName, visible = true }: Props) {
         ) : (
           <div className="avatar-stage empty" />
         )}
-        <div className="stage-controls">
-          <button
-            className={`mic-button${phase === 'recording' ? ' recording' : ''}`}
-            onClick={() => (phase === 'recording' ? void finishRecording() : startByUser())}
-            onPointerEnter={warmUp}
-            disabled={!sttReady || busy}
-            title={micTitle}
-            aria-label={phase === 'recording' ? '話し終わって送る' : '声で話す'}
-            style={{ ['--level' as string]: micLevel }}
-          >
-            {phase === 'recording' ? <Square size={24} aria-hidden /> : <Mic size={26} aria-hidden />}
-          </button>
-          {(canStop || handsfree) && (
-            <button className="btn small" onClick={stopAll}>
-              止める
-            </button>
+      </div>
+
+      <header className="stage-hud">
+        <div className="hud-left">
+          <h1 className="hud-name">{aiName}</h1>
+          <span className={`status-pill phase-${shownPhase}`} role="status" aria-live="polite">
+            <span className="status-dot" aria-hidden />
+            {shownPhase === 'recording' && autoStop
+              ? '聞いています…（黙ると送ります）'
+              : shownPhase === 'idle' && waitingForCall
+                ? `「ねえ、${aiName}」で呼んでね`
+                : PHASE_LABELS[shownPhase]}
+          </span>
+          {scene && (
+            <span className="scene-chip" title={scene.place}>
+              {scene.sky && <span aria-hidden>{skyIcon(scene.sky, scene.period)}</span>}
+              {scene.status}
+              {weather && (
+                <span className="scene-weather-text">
+                  {weather.place.split('（')[0]} {weather.label}
+                  {weather.temperature != null && ` ${Math.round(weather.temperature)}℃`}
+                  {weather.today.rain_chance != null && ` ・ 降水${weather.today.rain_chance}%`}
+                </span>
+              )}
+            </span>
           )}
         </div>
+        <div className="hud-right">
+          <div className="save-toggle">
+            <SaveToggle />
+          </div>
+          <button
+            className="btn small ghost glass"
+            onClick={clear}
+            disabled={streaming || messages.length === 0}
+            title="新しい会話をはじめる"
+          >
+            <SquarePen size={16} aria-hidden />
+            新しい会話
+          </button>
+        </div>
+      </header>
+
+      {waitingForCall &&
+        createPortal(
+          <div className="wake-indicator" role="status">
+            <Mic size={14} aria-hidden />
+            呼ばれるのを待っています（マイク使用中）
+          </div>,
+          document.body,
+        )}
+
+      <div className="chat-overlay">
+        <ModelStatusBanner />
+        {notice && (
+          <div className="banner warn" role="status">
+            {notice}
+          </div>
+        )}
+        <div className="messages" aria-live="polite">
+          {messages.length === 0 && (
+            <p className="empty">
+              {aiName} に話しかけてみよう。意見が違うときは、{aiName} は遠慮なく言い返します。
+              <br />
+              <span className="hint">「この会話を保存」をオンにすると、{aiName} はあなたのことを少しずつ覚えていきます。</span>
+            </p>
+          )}
+          <MessageList aiName={aiName} messages={messages} streaming={streaming} onSpeak={ttsReady ? replay : undefined} />
+          <div ref={endRef} />
+        </div>
+
+        {error && (
+          <div className="banner error" role="alert">
+            {error}
+          </div>
+        )}
+        {voiceNotice && (
+          <div className="banner warn" role="status">
+            {voiceNotice}
+          </div>
+        )}
+        {voiceError && (
+          <div className="banner error" role="alert">
+            {voiceError}
+          </div>
+        )}
         {handsfree && (
-          <p className="hint">
+          <p className="hint overlay-hint">
             {conversing
               ? '名前を呼ばなくても続けて話せます。5分ほど話しかけがないと終わります（すぐ終えるときは「止める」）。'
               : '続けて話せます。おしまいにするときは「止める」を押してください。'}
           </p>
         )}
         {stt && !sttReady && (
-          <p className="hint">
+          <p className="hint overlay-hint">
             声で話すには、<a href="#/settings">設定</a>の「声」で音声認識を準備してください。
           </p>
         )}
-        {speakers && !speakers.available && <p className="hint">{speakers.message} 声なしでも話せます。</p>}
+        {speakers && !speakers.available && <p className="hint overlay-hint">{speakers.message} 声なしでも話せます。</p>}
         {speakers?.available && !ttsReady && (
-          <p className="hint">
+          <p className="hint overlay-hint">
             {aiName} の声が決まっていません。<a href="#/settings">設定</a>の「声」で選べます。
           </p>
         )}
@@ -631,58 +710,6 @@ export function ChatPage({ aiName, visible = true }: Props) {
             </div>
           </form>
         )}
-        {voiceNotice && (
-          <div className="banner warn" role="status">
-            {voiceNotice}
-          </div>
-        )}
-        {voiceError && (
-          <div className="banner error" role="alert">
-            {voiceError}
-          </div>
-        )}
-      </aside>
-
-      <div className="chat-main">
-        <header className="page-header">
-          <h1>{aiName}</h1>
-          <div className="header-actions">
-            <SaveToggle />
-            <button
-              className="btn small ghost"
-              onClick={clear}
-              disabled={streaming || messages.length === 0}
-              title="新しい会話をはじめる"
-            >
-              <SquarePen size={16} aria-hidden />
-              新しい会話
-            </button>
-          </div>
-        </header>
-        <ModelStatusBanner />
-        {notice && (
-          <div className="banner warn" role="status">
-            {notice}
-          </div>
-        )}
-
-        <div className="messages" aria-live="polite">
-          {messages.length === 0 && (
-            <p className="empty">
-              {aiName} に話しかけてみよう。意見が違うときは、{aiName} は遠慮なく言い返します。
-              <br />
-              <span className="hint">「この会話を保存」をオンにすると、{aiName} はあなたのことを少しずつ覚えていきます。</span>
-            </p>
-          )}
-          <MessageList aiName={aiName} messages={messages} streaming={streaming} onSpeak={ttsReady ? replay : undefined} />
-          <div ref={endRef} />
-        </div>
-
-        {error && (
-          <div className="banner error" role="alert">
-            {error}
-          </div>
-        )}
 
         <form
           className="composer chat-composer"
@@ -691,15 +718,28 @@ export function ChatPage({ aiName, visible = true }: Props) {
             void submit()
           }}
         >
+          <button
+            type="button"
+            className={`mic-button${phase === 'recording' ? ' recording' : ''}`}
+            onClick={() => (phase === 'recording' ? void finishRecording() : startByUser())}
+            onPointerEnter={warmUp}
+            disabled={!sttReady || busy}
+            title={micTitle}
+            aria-label={phase === 'recording' ? '話し終わって送る' : '声で話す'}
+            style={{ ['--level' as string]: micLevel }}
+          >
+            {phase === 'recording' ? <Square size={20} aria-hidden /> : <Mic size={22} aria-hidden />}
+          </button>
           <label className="sr-only" htmlFor="chat-input">
             メッセージ
           </label>
           <textarea
             id="chat-input"
             value={input}
-            rows={2}
+            rows={1}
             maxLength={MAX_INPUT}
-            placeholder={`${aiName} に話しかける（Enterで送信 / Shift+Enterで改行）`}
+            placeholder={`${aiName} に話しかける`}
+            title="Enterで送信 / Shift+Enterで改行"
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
               // 日本語入力の変換確定の Enter では送信しない
@@ -709,8 +749,13 @@ export function ChatPage({ aiName, visible = true }: Props) {
               }
             }}
           />
+          {(canStop || handsfree) && !streaming && (
+            <button type="button" className="btn small" onClick={stopAll}>
+              止める
+            </button>
+          )}
           {streaming ? (
-            <button type="button" className="btn" onClick={stopChat}>
+            <button type="button" className="btn" onClick={stopAll}>
               停止
             </button>
           ) : (

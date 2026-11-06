@@ -2,7 +2,7 @@ import { act, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { jsonResponse, mockFetch, sseResponse } from '../test/fetchMock'
 import { renderWithConversation } from '../test/render'
-import { ChatPage, CONVERSATION_MS } from './ChatPage'
+import { ChatPage, CONVERSATION_MS, WAKE_REPLIES } from './ChatPage'
 
 // 呼びかけの待ち受けは、名前を呼ばれたことにする関数だけを取り出す
 const wake = vi.hoisted(() => ({ onWake: null as null | ((rest: string) => void), active: false }))
@@ -92,13 +92,47 @@ describe('ChatPage: 名前を呼んで始めた会話', () => {
     expect(wake.active).toBe(false)
   })
 
-  it('starts listening right away when only the name was called', async () => {
+  it('answers "なーに？" and starts listening when only the name was called', async () => {
     detectors.length = 0
     setup()
     renderWithConversation(<ChatPage aiName="漆" />)
     await vi.waitFor(() => expect(wake.active).toBe(true))
     act(() => wake.onWake!(''))
     await vi.waitFor(() => expect(screen.getByText(/聞いています/)).toBeInTheDocument())
+    expect(WAKE_REPLIES.some((r) => screen.queryByText(r))).toBe(true)
     expect(detectors.at(-1)!.noSpeechTimeoutMs).toBeGreaterThan(CONVERSATION_MS - 5000)
+  })
+
+  it('shows where the avatar is and the weather', async () => {
+    mockFetch({
+      'GET /api/settings': () => jsonResponse({ wake_enabled: false }),
+      'GET /api/models/status': () => jsonResponse(MODEL_OK),
+      'GET /api/scene': () =>
+        jsonResponse({
+          scene: {
+            kind: 'room',
+            background_id: null,
+            place: 'おうち',
+            indoor: true,
+            period: 'day',
+            status: '雨だからおうちにいるよ',
+            sky: 'rain',
+            weather: {
+              place: '神戸市（兵庫県 日本）',
+              code: 63,
+              label: '雨',
+              sky: 'rain',
+              temperature: 16.4,
+              is_day: true,
+              today: { code: 63, label: '雨', sky: 'rain', temp_max: 18, temp_min: 13, rain_chance: 90 },
+              tomorrow: null,
+            },
+          },
+          notice: null,
+        }),
+    })
+    renderWithConversation(<ChatPage aiName="漆" />)
+    expect(await screen.findByText('雨だからおうちにいるよ')).toBeInTheDocument()
+    expect(screen.getByText(/神戸市 雨 16℃ ・ 降水90%/)).toBeInTheDocument()
   })
 })

@@ -15,11 +15,12 @@ interface Props {
   nod?: boolean
   getListenLevel?: () => number
   gaze?: boolean
+  framing?: 'close' | 'wide'
   emptyMessage?: React.ReactNode
 }
 
 /** アバター表示領域。仮モデルの表示と、必要なクレジット表記を必ず添える。 */
-export function AvatarStage({ avatar, getLevel, emotion, activity, nod, getListenLevel, gaze, emptyMessage }: Props) {
+export function AvatarStage({ avatar, getLevel, emotion, activity, nod, getListenLevel, gaze, framing, emptyMessage }: Props) {
   if (!avatar) {
     return (
       <div className="avatar-stage empty">
@@ -43,6 +44,7 @@ export function AvatarStage({ avatar, getLevel, emotion, activity, nod, getListe
           nod={nod}
           getListenLevel={getListenLevel}
           gaze={gaze}
+          framing={framing}
         />
       </Suspense>
       {(avatar.meta.credit_required || avatar.meta.authors) && (

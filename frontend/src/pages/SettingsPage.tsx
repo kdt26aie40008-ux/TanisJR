@@ -5,6 +5,7 @@ import { BackupCreate, BackupRestore } from '../components/BackupPanel'
 import { BehaviorSettings } from '../components/BehaviorSettings'
 import { InstallPanel } from '../components/InstallPanel'
 import { ProactiveSettings, WakeSettings } from '../components/AssistantSettings'
+import { SceneSettings } from '../components/SceneSettings'
 import { SelfProfilePanel } from '../components/SelfProfilePanel'
 import { ModelDownloadDialog } from '../components/ModelDownloadDialog'
 import { VoiceSettings } from '../components/VoiceSettings'
@@ -122,6 +123,17 @@ export function SettingsPage({ onAiNameChange, onRestored }: Props) {
         <h3>ふるまい</h3>
         <p className="hint">会話をより自然にするための動きです。1つずつオン・オフできます。</p>
         <BehaviorSettings settings={settings} update={update} />
+
+        <h3>背景と天気</h3>
+        <SceneSettings
+          settings={settings}
+          update={update}
+          onPlaceSaved={(place, label) =>
+            setSettings((prev) =>
+              prev ? { ...prev, weather_place: label, weather_latitude: place.latitude, weather_longitude: place.longitude } : prev,
+            )
+          }
+        />
 
         <h3>自分から話しかける</h3>
         <ProactiveSettings settings={settings} update={update} />
