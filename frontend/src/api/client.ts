@@ -2,6 +2,10 @@ import { SSEParser } from '../lib/sse'
 import type {
   AppSettings,
   Avatar,
+  BackgroundKind,
+  CustomBackground,
+  Scene,
+  WeatherPlace,
   CalendarEvent,
   CalendarOperation,
   CalendarStatus,
@@ -191,6 +195,23 @@ export const api = {
   activateAvatar: (id: string) => json<{ active_id: string }>(`/api/avatars/${id}/activate`, { method: 'POST' }),
   deleteAvatar: (id: string) => json<{ deleted: boolean }>(`/api/avatars/${id}`, { method: 'DELETE' }),
   avatarFileUrl: (id: string) => `/api/avatars/${id}/file`,
+
+  // ----- 背景・天気 -----
+  scene: () => json<{ scene: Scene; notice: string | null }>('/api/scene'),
+  searchWeatherPlaces: (q: string) =>
+    json<{ places: WeatherPlace[] }>(`/api/weather/places?${new URLSearchParams({ q })}`),
+  chooseWeatherPlace: (place: WeatherPlace) => json<{ place: string }>('/api/weather/place', body({ place })),
+  backgrounds: () => json<{ backgrounds: CustomBackground[] }>('/api/backgrounds'),
+  uploadBackground: (file: File, name: string, kind: BackgroundKind) =>
+    json<CustomBackground>(`/api/backgrounds?${new URLSearchParams({ name, kind })}`, {
+      method: 'POST',
+      body: file,
+      headers: { 'Content-Type': 'application/octet-stream' },
+    }),
+  updateBackground: (id: string, value: { name?: string; kind?: BackgroundKind }) =>
+    json<CustomBackground>(`/api/backgrounds/${id}`, body(value, 'PUT')),
+  deleteBackground: (id: string) => json<{ deleted: boolean }>(`/api/backgrounds/${id}`, { method: 'DELETE' }),
+  backgroundFileUrl: (id: string) => `/api/backgrounds/${id}/file`,
 
   // ----- カレンダー -----
   calendarStatus: () => json<CalendarStatus>('/api/calendar/status'),

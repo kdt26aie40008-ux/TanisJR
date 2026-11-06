@@ -17,6 +17,7 @@ MAX_MESSAGES = 100
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 # Ollama のモデル名: 例 qwen3:8b, hf.co/user/model:Q4_K_M
 MODEL_NAME_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._\-/]{0,127}(:[A-Za-z0-9._\-]{1,64})?$"
+SCENE_MODE_PATTERN = r"^(auto|room|park|street|cafe|custom:[0-9a-f]{32})$"
 
 
 def clean_text(value: str) -> str:
@@ -162,6 +163,14 @@ class AppSettings(StrictModel):
     default_reminder_minutes: int = Field(default=10, ge=0, le=1440)
     # 会話から予定の追加・変更・削除の下書きを提案する（実行は承認後のみ）
     calendar_ai_proposals: bool = True
+    # --- 背景・天気 ---
+    # 背景（アバターのいる場所）。auto: 時間帯と天気で出かける / room・park・street・cafe / custom:<画像id>（固定）
+    scene_mode: str = Field(default="auto", pattern=SCENE_MODE_PATTERN)
+    # 天気予報を使うか（Open-Meteo に場所の緯度・経度だけを送る。既定はオフ）
+    weather_enabled: bool = False
+    weather_place: str = Field(default="", max_length=64)
+    weather_latitude: float | None = Field(default=None, ge=-90, le=90)
+    weather_longitude: float | None = Field(default=None, ge=-180, le=180)
 
     @field_validator("fallback_model")
     @classmethod
@@ -213,6 +222,11 @@ class SettingsUpdate(StrictModel):
     notifications_enabled: bool | None = None
     default_reminder_minutes: int | None = Field(default=None, ge=0, le=1440)
     calendar_ai_proposals: bool | None = None
+    scene_mode: str | None = Field(default=None, pattern=SCENE_MODE_PATTERN)
+    weather_enabled: bool | None = None
+    weather_place: str | None = Field(default=None, max_length=64)
+    weather_latitude: float | None = Field(default=None, ge=-90, le=90)
+    weather_longitude: float | None = Field(default=None, ge=-180, le=180)
 
     @field_validator("ai_name")
     @classmethod

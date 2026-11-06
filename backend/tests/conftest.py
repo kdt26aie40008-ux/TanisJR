@@ -265,6 +265,45 @@ def fake_notifier() -> FakeNotifier:
     return FakeNotifier()
 
 
+class FakeWeather:
+    """Open-Meteo の代わり。code を変えると天気が変わる。呼ばれた URL を記録する。"""
+
+    def __init__(self) -> None:
+        self.code = 61
+        self.fail = False
+        self.requests: list[httpx.Request] = []
+
+    def transport(self) -> httpx.MockTransport:
+        def handle(request: httpx.Request) -> httpx.Response:
+            self.requests.append(request)
+            if self.fail:
+                return httpx.Response(503)
+            if "geocoding" in request.url.host:
+                return httpx.Response(
+                    200,
+                    json={"results": [{"name": "神戸市", "admin1": "兵庫県", "country": "日本", "latitude": 34.6913, "longitude": 135.183}]},
+                )
+            return httpx.Response(
+                200,
+                json={
+                    "current": {"temperature_2m": 17.4, "weather_code": self.code, "is_day": 1},
+                    "daily": {
+                        "weather_code": [self.code, 1],
+                        "temperature_2m_max": [19.0, 22.0],
+                        "temperature_2m_min": [13.0, 12.0],
+                        "precipitation_probability_max": [80, 10],
+                    },
+                },
+            )
+
+        return httpx.MockTransport(handle)
+
+
+@pytest.fixture
+def fake_weather() -> FakeWeather:
+    return FakeWeather()
+
+
 @pytest.fixture
 def config(tmp_path: Path) -> Config:
     return Config(
@@ -287,6 +326,7 @@ def make_client(
     fake_stt: FakeTranscriber,
     fake_google: FakeGoogle,
     fake_notifier: FakeNotifier,
+    fake_weather: "FakeWeather",
 ) -> Iterator[Callable[[], TestClient]]:
     """同じデータフォルダーでアプリを起動し直せるようにする。"""
     clients: list[TestClient] = []
@@ -305,6 +345,8 @@ def make_client(
             allow_process_control=False,
             # 実際の AivisSpeech を起動しないよう、存在しないパスを渡す
             aivis_engine_path=tmp_path / "no-aivis" / "run.exe",
+            # 天気予報はインターネットに問い合わせない（テストごとに差し替えられる）
+            weather_transport=fake_weather.transport(),
         )
         c = TestClient(app, headers={"Origin": ORIGIN})
         c.__enter__()

@@ -18,7 +18,9 @@ from app.calendar.service import CalendarError
 from app.deps import Services, get_services
 from app.llm.ollama import OllamaError
 from app.errors import AppError, setup_required
+from app.routers.scene import current_scene
 from app.routers.sse import sse_response
+from app.services.scene import describe_for_ai
 from app.schemas import ChatRequest
 from app.services.chat import stream_chat
 from app.services.persona import build_system_prompt
@@ -159,6 +161,8 @@ async def chat(body: ChatRequest, services: Services = Depends(get_services)) ->
     if use_calendar and calendar_on:
         calendar_flow, calendar_events = await _calendar_turn(services, settings.model, user_text, upcoming, awaiting)
 
+    # アバターのいまの居場所と天気（天気の取得に失敗しても会話は続ける）
+    scene, _ = await current_scene(services)
     system_prompt = build_system_prompt(
         settings.ai_name,
         profile,
@@ -169,6 +173,8 @@ async def chat(body: ChatRequest, services: Services = Depends(get_services)) ->
         time_of_day=datetime.now().strftime("%H:%M"),
         # 予定の確認の進め方は、守られやすいようプロンプトの最後に置く
         final=calendar_flow,
+        situation=describe_for_ai(scene),
+        weather_known=scene.weather is not None,
     )
     turn = _Turn()
 

@@ -18,6 +18,8 @@ export interface AvatarViewerProps {
   getListenLevel?: () => number
   /** 目線をこちらに向け、マウスの位置を目で追う */
   gaze?: boolean
+  /** close: 顔まわりを大きく / wide: 腰のあたりまで写して、後ろの景色も見せる */
+  framing?: 'close' | 'wide'
   className?: string
 }
 
@@ -42,6 +44,7 @@ export default function AvatarViewer({
   nod = true,
   getListenLevel,
   gaze: gazeOn = true,
+  framing = 'close',
   className,
 }: AvatarViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -92,12 +95,21 @@ export default function AvatarViewer({
     ahead.position.set(0, 1.3, 20)
     scene.add(gaze, ahead)
 
+    // 縦長の画面（スマホなど）では横が切れないよう、少し離れて写す
+    let baseDistance = 0
+    const fitDistance = () => {
+      if (framing !== 'wide' || !baseDistance) return
+      camera.position.z = baseDistance * Math.max(1, Math.sqrt(0.85 / camera.aspect))
+      camera.lookAt(target)
+      gaze.position.copy(camera.position)
+    }
     const resize = () => {
       const { clientWidth: w, clientHeight: h } = container
       if (!w || !h) return
       renderer.setSize(w, h, false)
       camera.aspect = w / h
       camera.updateProjectionMatrix()
+      fitDistance()
     }
     const observer = new ResizeObserver(resize)
     observer.observe(container)
@@ -133,8 +145,15 @@ export default function AvatarViewer({
         const head = humanoid.getNormalizedBoneNode('head')
         if (head) {
           const headPos = head.getWorldPosition(new THREE.Vector3())
-          target.set(0, headPos.y - 0.12, 0)
-          camera.position.set(0, headPos.y - 0.05, headPos.y * 1.05)
+          if (framing === 'wide') {
+            target.set(0, headPos.y - 0.26, 0)
+            camera.position.set(0, headPos.y - 0.16, headPos.y * 1.6)
+            baseDistance = headPos.y * 1.6
+            fitDistance()
+          } else {
+            target.set(0, headPos.y - 0.12, 0)
+            camera.position.set(0, headPos.y - 0.05, headPos.y * 1.05)
+          }
           camera.lookAt(target)
         }
         gaze.position.copy(camera.position)
@@ -268,7 +287,7 @@ export default function AvatarViewer({
       renderer.dispose()
       renderer.domElement.remove()
     }
-  }, [url])
+  }, [url, framing])
 
   return (
     <div className={`avatar-viewer ${className ?? ''}`} ref={containerRef}>

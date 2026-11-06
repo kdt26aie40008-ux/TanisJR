@@ -57,6 +57,63 @@ export interface AppSettings {
   default_reminder_minutes: number
   calendar_ai_proposals: boolean
   calendar_backend: 'local' | 'google'
+  scene_mode: string
+  weather_enabled: boolean
+  weather_place: string
+  weather_latitude: number | null
+  weather_longitude: number | null
+}
+
+export type Sky = 'clear' | 'cloudy' | 'fog' | 'rain' | 'snow' | 'thunder'
+export type ScenePeriod = 'dawn' | 'day' | 'evening' | 'night'
+export type BuiltinSceneKind = 'room' | 'park' | 'street' | 'cafe'
+
+export interface DayForecast {
+  code: number
+  label: string
+  sky: Sky
+  temp_max: number | null
+  temp_min: number | null
+  rain_chance: number | null
+}
+
+export interface Weather {
+  place: string
+  code: number
+  label: string
+  sky: Sky
+  temperature: number | null
+  is_day: boolean
+  today: DayForecast
+  tomorrow: DayForecast | null
+}
+
+export interface Scene {
+  kind: BuiltinSceneKind | 'custom'
+  background_id: string | null
+  place: string
+  indoor: boolean
+  period: ScenePeriod
+  status: string
+  sky: Sky | null
+  weather: Weather | null
+}
+
+export interface WeatherPlace {
+  name: string
+  detail: string
+  latitude: number
+  longitude: number
+}
+
+export type BackgroundKind = 'home' | 'indoor' | 'outdoor'
+
+export interface CustomBackground {
+  id: string
+  name: string
+  kind: BackgroundKind
+  ext: string
+  size: number
 }
 
 export type LanguageCode = 'ja' | 'en' | 'zh' | 'ko' | 'es' | 'fr' | 'de'

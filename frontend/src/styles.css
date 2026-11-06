@@ -1577,3 +1577,444 @@ textarea {
     align-items: stretch;
   }
 }
+
+/* ===== おしゃべり画面（景色の中にアバター、会話は左下に重ねる） ===== */
+.chat-page.immersive {
+  position: relative;
+  display: block;
+  max-width: none;
+  height: calc(100vh - 2em);
+  margin: 1em;
+  padding: 0;
+  border-radius: 28px;
+  overflow: hidden;
+  background: #2b2a33;
+  box-shadow: var(--shadow-lg);
+  isolation: isolate;
+}
+.scene-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+}
+.scene-backdrop.scene-empty {
+  background: linear-gradient(#cfe3ef, #f3e7da);
+}
+.scene-svg,
+.scene-weather,
+.scene-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.scene-svg {
+  /* 背景は少しぼかして、アバターを引き立てる */
+  filter: blur(1.5px) saturate(0.95);
+  transform: scale(1.02);
+}
+.scene-image {
+  object-fit: cover;
+  filter: blur(1px);
+  transform: scale(1.02);
+}
+.scene-tint {
+  position: absolute;
+  inset: 0;
+}
+.scene-flash {
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  opacity: 0;
+  animation: thunder 9s infinite;
+  pointer-events: none;
+}
+.scene-flash.soft {
+  animation-name: thunder-soft;
+}
+@keyframes thunder {
+  0%, 91%, 94%, 100% { opacity: 0; }
+  92%, 93.2% { opacity: 0.55; }
+}
+@keyframes thunder-soft {
+  0%, 91%, 94%, 100% { opacity: 0; }
+  92%, 93.2% { opacity: 0.18; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .scene-flash { animation: none; }
+}
+/* 足もとを少し暗くして、文字を読みやすくする */
+.chat-page.immersive::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    linear-gradient(to top, rgba(18, 16, 22, 0.62), rgba(18, 16, 22, 0) 46%),
+    linear-gradient(to bottom, rgba(18, 16, 22, 0.35), rgba(18, 16, 22, 0) 18%);
+}
+.stage-avatar {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+.immersive .avatar-stage {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  max-width: none;
+  aspect-ratio: auto;
+  margin: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.immersive .avatar-stage.empty {
+  background: transparent;
+  color: #fff;
+  align-content: start;
+  padding-top: 30vh;
+}
+.immersive .avatar-stage.empty .hint,
+.immersive .avatar-stage.empty a {
+  color: #fff;
+}
+.immersive .avatar-credit {
+  left: auto;
+  right: 1em;
+  bottom: auto;
+  top: 4.2em;
+  max-width: 40%;
+  background: rgba(20, 18, 24, 0.4);
+  color: rgba(255, 255, 255, 0.85);
+}
+.stage-hud {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.8em;
+  padding: 1em 1.2em;
+  pointer-events: none;
+}
+.stage-hud > * {
+  pointer-events: auto;
+}
+.hud-left {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5em;
+  min-width: 0;
+}
+.hud-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  flex-shrink: 0;
+}
+.hud-name {
+  margin: 0 0.3em 0 0.2em;
+  font-size: 1.3rem;
+  color: #fff;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
+}
+.immersive .status-pill,
+.scene-chip,
+.btn.glass,
+.immersive .save-toggle {
+  background: rgba(20, 18, 24, 0.38);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(10px);
+}
+.scene-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+  padding: 0.2em 0.9em;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  max-width: 100%;
+}
+.scene-weather-text {
+  opacity: 0.85;
+  padding-left: 0.45em;
+  border-left: 1px solid rgba(255, 255, 255, 0.35);
+}
+.btn.glass:hover:not(:disabled) {
+  background: rgba(20, 18, 24, 0.55);
+}
+.immersive .save-toggle,
+.immersive .save-toggle * {
+  color: #fff;
+}
+.immersive .save-toggle {
+  border-radius: 999px;
+  padding: 0.15em 0.8em;
+}
+.chat-overlay {
+  position: absolute;
+  z-index: 3;
+  left: 1.2em;
+  bottom: 1em;
+  width: min(440px, 42%);
+  max-height: 62%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
+  color: #fff;
+}
+.chat-overlay .messages {
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 0.55em;
+  padding: 0.3em 0.2em 0.2em;
+  font-size: 0.86rem;
+  line-height: 1.6;
+  /* 上のほうは景色に溶かす */
+  mask-image: linear-gradient(to bottom, transparent, #000 18%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 18%);
+}
+.chat-overlay .empty {
+  margin-top: 0;
+  text-align: left;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+}
+.chat-overlay .empty .hint {
+  color: rgba(255, 255, 255, 0.75);
+}
+.chat-overlay .message {
+  max-width: 100%;
+}
+.chat-overlay .message.user {
+  align-self: flex-end;
+  max-width: 85%;
+}
+.chat-overlay .message-author {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.7rem;
+  margin: 0 0.2em 0.05em;
+}
+/* 吹き出しは使わず、景色の上に文字だけを置く */
+.chat-overlay .bubble-text {
+  padding: 0.1em 0.2em;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75), 0 0 10px rgba(0, 0, 0, 0.35);
+}
+.chat-overlay .message.user .bubble-text {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 14px 14px 4px 14px;
+  padding: 0.3em 0.8em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+.chat-overlay .md code,
+.chat-overlay .md pre {
+  background: rgba(0, 0, 0, 0.35);
+  text-shadow: none;
+}
+.chat-overlay .md .katex-display {
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 10px;
+  padding: 0.3em 0.6em;
+}
+.chat-overlay .speak-btn {
+  margin-top: 0.15em;
+  font-size: 0.72rem;
+  padding: 0.05em 0.7em;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  border-color: transparent;
+}
+.chat-overlay .used-memories,
+.chat-overlay .thinking {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+.chat-overlay .typing {
+  color: rgba(255, 255, 255, 0.75);
+}
+.chat-overlay .banner {
+  font-size: 0.82rem;
+}
+.overlay-hint {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.75rem;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+.overlay-hint a {
+  color: #fff;
+}
+.chat-overlay .recognized {
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text);
+}
+.immersive .chat-composer {
+  align-items: center;
+  margin: 0;
+  padding: 0.35em 0.4em;
+  background: rgba(20, 18, 24, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(12px);
+  border-radius: 999px;
+}
+.immersive .chat-composer textarea {
+  min-height: 0;
+  height: 2.4em;
+  padding: 0.45em 0.4em;
+  background: transparent;
+  border: none;
+  color: #fff;
+  resize: none;
+  box-shadow: none;
+}
+.immersive .chat-composer textarea::placeholder {
+  color: rgba(255, 255, 255, 0.6);
+}
+.immersive .chat-composer textarea:focus {
+  outline: none;
+}
+.immersive .mic-button {
+  width: 2.6em;
+  height: 2.6em;
+  flex-shrink: 0;
+}
+.immersive .chat-composer .icon-btn {
+  width: 2.6em;
+  height: 2.6em;
+  flex-shrink: 0;
+}
+@media (max-width: 860px) {
+  .chat-page.immersive {
+    height: calc(100vh - 3.6em - 1em);
+    margin: 0.5em;
+    border-radius: 20px;
+  }
+  .chat-overlay {
+    left: 0.6em;
+    right: 0.6em;
+    width: auto;
+    max-height: 48%;
+  }
+  .stage-hud {
+    padding: 0.6em 0.7em;
+  }
+  .hud-right .btn span,
+  .scene-weather-text {
+    display: none;
+  }
+}
+.immersive .save-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  font-size: 0.82rem;
+}
+.immersive .save-toggle .hint {
+  font-size: 0.7rem;
+  opacity: 0.8;
+}
+@media (max-width: 860px) {
+  .immersive .save-toggle .hint {
+    display: none;
+  }
+}
+.immersive .chat-composer textarea {
+  overflow-y: auto;
+  scrollbar-width: none;
+  line-height: 1.5;
+}
+.immersive .chat-composer textarea::-webkit-scrollbar {
+  display: none;
+}
+/* ===== 設定: 背景と天気 ===== */
+.scene-settings h4 {
+  margin: 1.2em 0 0.3em;
+  font-size: 0.95rem;
+}
+.inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+  align-items: center;
+  margin: 0.4em 0;
+}
+.inline-form input[type='text'] {
+  flex: 1 1 12em;
+  min-width: 0;
+}
+.place-list {
+  list-style: none;
+  margin: 0.3em 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3em;
+}
+.background-list {
+  list-style: none;
+  margin: 0.5em 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5em;
+}
+.background-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  flex-wrap: wrap;
+}
+.background-list img {
+  width: 96px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+.background-name {
+  font-weight: 600;
+  min-width: 5em;
+}
+.immersive .status-pill,
+.scene-chip {
+  white-space: nowrap;
+}
+@media (max-width: 860px) {
+  .stage-hud {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    gap: 0.4em;
+  }
+  .hud-right {
+    justify-content: flex-end;
+  }
+  .hud-left {
+    flex-wrap: wrap;
+  }
+  .scene-chip {
+    white-space: normal;
+  }
+  .immersive .avatar-credit {
+    top: auto;
+    bottom: 48%;
+  }
+}
+@media (max-width: 860px) {
+  .immersive .avatar-credit {
+    top: 6.6em;
+    bottom: auto;
+    max-width: 60%;
+  }
+}
