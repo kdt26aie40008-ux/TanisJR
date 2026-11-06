@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import rehypeKatex from 'rehype-katex'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
-import { normalizeMath } from '../lib/mathText'
+import { readableMath } from '../lib/mathText'
 
 /**
  * AI の返事を、太字・箇条書き・コード・数式（LaTeX）つきで表示する。
@@ -24,7 +24,7 @@ export function MarkdownText({ text }: { text: string }) {
           ),
         }}
       >
-        {normalizeMath(text)}
+        {readableMath(text)}
       </ReactMarkdown>
     </div>
   )
