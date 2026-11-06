@@ -35,6 +35,7 @@ class FakeOllama:
         # 記憶抽出（format 指定の非ストリーミング呼び出し）の結果
         self.extraction: list[dict] = []
         self.extraction_raw: str | None = None
+        self.format_queue: list[dict] = []
         self.embed_available = True
         self.models = [{"name": "qwen3:8b", "size": 5_200_000_000}, {"name": "qwen3-embedding:0.6b", "size": 639_000_000}]
 
@@ -63,6 +64,10 @@ class FakeOllama:
                 if "format" not in body and body.get("stream") is False:
                     # 蒸留など、形式指定のない非ストリーミング呼び出し
                     return httpx.Response(200, json={"message": {"role": "assistant", "content": "教師の回答です"}, "done": True})
+                if "format" in body and self.format_queue:
+                    # 形式指定の呼び出しへの応答を、呼ばれた順に返す（予定の下書き・返事の分類など）
+                    content = json.dumps(self.format_queue.pop(0), ensure_ascii=False)
+                    return httpx.Response(200, json={"message": {"role": "assistant", "content": content}, "done": True})
                 if "format" in body:
                     content = self.extraction_raw if self.extraction_raw is not None else json.dumps(
                         {"memories": self.extraction}, ensure_ascii=False

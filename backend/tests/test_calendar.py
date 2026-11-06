@@ -234,9 +234,9 @@ def test_ai_proposal_is_not_executed(setup_done: TestClient, fake_google: FakeGo
     assert proposal["draft"]["summary"] == "歯医者"
     assert proposal["draft"]["end"].endswith("11:00")  # 終了未指定は1時間後
     assert fake_google.events == {}  # AI の提案だけでは実行されない
-    # 会話の文脈に「承認されるまで実行されない」ルールが入っている
+    # 会話の文脈に「了承されるまで実行されない」ことと、復唱して確認する指示が入っている
     system = [b for b in fake_ollama.paths("/api/chat") if "format" not in b][-1]["messages"][0]["content"]
-    assert "承認" in system and "追加しました" in system
+    assert "了承" in system and "まだ実行していない" in system and "歯医者" in system
 
 
 def test_no_proposal_without_calendar_words(setup_done: TestClient, fake_ollama: FakeOllama) -> None:

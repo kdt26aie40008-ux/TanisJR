@@ -105,6 +105,43 @@ describe('ChatPage saving', () => {
     expect(screen.getByRole('button', { name: '承認して実行' })).toBeInTheDocument()
   })
 
+  it('updates the card when the reply in conversation decides it', async () => {
+    const user = userEvent.setup()
+    const op = {
+      id: 'd'.repeat(32), action: 'create', event_id: null, target: null, source: 'ai', status: 'pending', error: null,
+      result_event_id: null, created_at: '', decided_at: null,
+      draft: { summary: '歯医者', all_day: false, start: '2026-11-07T10:00', end: '2026-11-07T11:00', location: '', description: '', reminder_minutes: null },
+    }
+    let turn = 0
+    mockFetch(
+      routes({
+        'POST /api/chat': () => {
+          turn += 1
+          return turn === 1
+            ? sseResponse([
+                { type: 'calendar_proposal', operation: op },
+                { type: 'token', content: '明日10時に歯医者を入れるね。通知は何分前がいい？' },
+                { type: 'done', model: 'qwen3:8b' },
+              ])
+            : sseResponse([
+                { type: 'calendar_decided', operation: { ...op, status: 'done', draft: { ...op.draft, reminder_minutes: 30 } } },
+                { type: 'token', content: '入れといたよ。30分前に知らせるね。' },
+                { type: 'done', model: 'qwen3:8b' },
+              ])
+        },
+      }),
+    )
+    renderWithConversation(<ChatPage aiName="タニス" />)
+    await user.type(screen.getByLabelText('メッセージ'), '明日10時に歯医者入れて{Enter}')
+    expect(await screen.findByText(/会話で「うん」「お願い」と答えるか/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '承認して実行' })).toBeInTheDocument()
+
+    await user.type(screen.getByLabelText('メッセージ'), '30分前で{Enter}')
+    expect(await screen.findByText('実行しました')).toBeInTheDocument()
+    expect(screen.getByText('30分前')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '承認して実行' })).toBeNull()
+  })
+
   it('switching off stops sending the conversation id', async () => {
     const user = userEvent.setup()
     const calls = mockFetch(routes({ 'GET /api/settings': () => jsonResponse({ save_conversations_default: true }) }))

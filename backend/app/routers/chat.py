@@ -11,7 +11,8 @@ from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
 
 from app.calendar.google import GoogleError
-from app.calendar.models import CalendarEvent
+from app.calendar.conversation import classify_reply, outcome_instruction, proposal_instruction, revise
+from app.calendar.models import CalendarEvent, Operation, OperationCreate
 from app.calendar.proposals import calendar_context, mentions_calendar, propose_from_text
 from app.calendar.service import CalendarError
 from app.deps import Services, get_services
@@ -43,6 +44,80 @@ class _Turn:
     message_id: int | None = None
 
 
+def _op_event(kind: str, op: Operation) -> dict[str, Any]:
+    return {"type": kind, "operation": op.model_dump(mode="json")}
+
+
+async def _propose(
+    services: Services, model: str, text: str, upcoming: list[CalendarEvent]
+) -> Operation | None:
+    """予定の追加・変更・削除の依頼なら、確認待ちの下書きを作る（ここでは実行しない）。"""
+    try:
+        proposal = await propose_from_text(services.ollama, model, text, upcoming)
+        return await services.calendar.propose(proposal, source="ai") if proposal else None
+    except (OllamaError, GoogleError, CalendarError) as exc:
+        logger.warning("Calendar proposal failed: %s", type(exc).__name__)
+        return None
+
+
+async def _calendar_turn(
+    services: Services,
+    model: str,
+    user_text: str,
+    upcoming: list[CalendarEvent],
+    awaiting: Operation | None,
+) -> tuple[str, list[dict[str, Any]]]:
+    """会話での予定の確認を進める。返り値は（AI への指示, 画面に送るイベント）。
+
+    - 確認中の下書きがなければ、依頼から下書きを作り、復唱して確認するよう AI に指示する。
+    - 確認中の下書きがあれば、ユーザーの返事が了承なら実行、断りなら破棄、直す指示なら作り直す。
+      はっきりしない返事では実行しない（画面のカードのボタンでも決められる）。
+    """
+    calendar = services.calendar
+    if awaiting is None:
+        if not mentions_calendar(user_text):
+            return "", []
+        op = await _propose(services, model, user_text, upcoming)
+        return (proposal_instruction(op), [_op_event("calendar_proposal", op)]) if op else ("", [])
+
+    reply = await classify_reply(services.ollama, model, awaiting, user_text)
+    if reply.decision == "yes":
+        op = awaiting
+        try:
+            if reply.reminder_minutes is not None:
+                op = calendar.set_reminder(op.id, reply.reminder_minutes)
+            done = await calendar.approve(op.id)
+            instruction = outcome_instruction("yes", done)
+            if reply.no_reminder and done.result_event_id:
+                # 「通知はいらない」と言われたら、この予定は通知しない
+                calendar.set_notify(done.result_event_id, -1)
+                instruction += "\n- 通知はしない設定にした。"
+            if services.scheduler:
+                await services.scheduler.sync(force=True)
+            return instruction, [_op_event("calendar_decided", done)]
+        except (GoogleError, CalendarError) as exc:
+            latest = calendar.get_operation(op.id) or op
+            return outcome_instruction("yes", latest, error=exc.message), [_op_event("calendar_decided", latest)]
+    if reply.decision == "no":
+        rejected = calendar.reject(awaiting.id)
+        return outcome_instruction("no", rejected), [_op_event("calendar_decided", rejected)]
+    if reply.decision == "change":
+        # 直すのは確認中の予定だけ（別の既存の予定を対象にしない）
+        draft = await revise(services.ollama, model, awaiting, user_text)
+        if draft is not None:
+            try:
+                op = await calendar.propose(
+                    OperationCreate(action=awaiting.action, event_id=awaiting.event_id, draft=draft), source="ai"
+                )
+            except (GoogleError, CalendarError) as exc:
+                logger.warning("Calendar revision failed: %s", type(exc).__name__)
+            else:
+                rejected = calendar.reject(awaiting.id)
+                return proposal_instruction(op), [_op_event("calendar_decided", rejected), _op_event("calendar_proposal", op)]
+    # 関係ない話・はっきりしない返事・直し方が分からないとき: 実行せず、最後にもう一度確認する
+    return outcome_instruction("other", awaiting), []
+
+
 @router.post("/chat")
 async def chat(body: ChatRequest, services: Services = Depends(get_services)) -> StreamingResponse:
     if not services.settings.is_setup_completed():
@@ -64,11 +139,14 @@ async def chat(body: ChatRequest, services: Services = Depends(get_services)) ->
     relevant, notice = await services.memory.relevant(user_text)
     memory_lines = [f"[{CATEGORY_LABELS.get(r.memory.category, r.memory.category)}] {r.memory.content}" for r in relevant]
 
-    # 予定に関する発言のときだけ、直近の予定を会話の文脈に加える
+    # 予定に関する発言、または会話で確認中の予定があるときだけ、カレンダーを会話の文脈に加える
+    calendar_on = services.calendar.is_connected() and settings.calendar_ai_proposals
+    awaiting = services.calendar.awaiting_confirmation() if calendar_on else None
     upcoming: list[CalendarEvent] = []
     calendar_extra = ""
     calendar_notice = None
-    use_calendar = services.calendar.is_connected() and mentions_calendar(user_text)
+    calendar_events: list[dict[str, Any]] = []
+    use_calendar = services.calendar.is_connected() and (mentions_calendar(user_text) or awaiting is not None)
     if use_calendar:
         try:
             upcoming = await services.calendar.upcoming(days=7)
@@ -76,6 +154,10 @@ async def chat(body: ChatRequest, services: Services = Depends(get_services)) ->
         except (GoogleError, CalendarError) as exc:
             use_calendar = False
             calendar_notice = f"カレンダーを読み込めませんでした: {exc.message}"
+
+    calendar_flow = ""
+    if use_calendar and calendar_on:
+        calendar_flow, calendar_events = await _calendar_turn(services, settings.model, user_text, upcoming, awaiting)
 
     system_prompt = build_system_prompt(
         settings.ai_name,
@@ -85,22 +167,10 @@ async def chat(body: ChatRequest, services: Services = Depends(get_services)) ->
         language=settings.language,
         # 時刻に合ったあいさつをするため
         time_of_day=datetime.now().strftime("%H:%M"),
+        # 予定の確認の進め方は、守られやすいようプロンプトの最後に置く
+        final=calendar_flow,
     )
     turn = _Turn()
-
-    async def calendar_proposal() -> dict[str, Any] | None:
-        """予定の追加・変更・削除の依頼なら、承認待ちの下書きを作る（ここでは実行しない）。"""
-        if not (use_calendar and settings.calendar_ai_proposals):
-            return None
-        try:
-            proposal = await propose_from_text(services.ollama, settings.model, user_text, upcoming)
-            if proposal is None:
-                return None
-            op = await services.calendar.propose(proposal, source="ai")
-        except (OllamaError, GoogleError, CalendarError) as exc:
-            logger.warning("Calendar proposal failed: %s", type(exc).__name__)
-            return None
-        return {"type": "calendar_proposal", "operation": op.model_dump(mode="json")}
 
     async def events() -> AsyncIterator[dict[str, Any]]:
         for message in (notice, calendar_notice):
@@ -111,6 +181,9 @@ async def chat(body: ChatRequest, services: Services = Depends(get_services)) ->
                 "type": "memories_used",
                 "items": [{"id": r.memory.id, "content": r.memory.content, "category": r.memory.category} for r in relevant],
             }
+        # 予定の確認カード（新しい下書き・会話で決まった結果）は、返事より先に送る
+        for item in calendar_events:
+            yield item
         async for event in stream_chat(services.ollama, settings, system_prompt, body.messages):
             if event["type"] == "token":
                 turn.text += event["content"]
@@ -121,10 +194,6 @@ async def chat(body: ChatRequest, services: Services = Depends(get_services)) ->
                     yield {"type": "saved", "conversation_id": conversation_id}
                 except KeyError:
                     yield {"type": "notice", "message": "会話が削除されたため、このやり取りは保存されませんでした。"}
-            if event["type"] == "done" and turn.text.strip():
-                proposal = await calendar_proposal()
-                if proposal:
-                    yield proposal
             yield event
 
     async def extract() -> None:

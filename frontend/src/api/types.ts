@@ -356,6 +356,8 @@ export type ChatEvent =
   | { type: 'memories_used'; items: UsedMemory[] }
   | { type: 'saved'; conversation_id: string }
   | { type: 'calendar_proposal'; operation: CalendarOperation }
+  /** 会話の返事で、確認中の予定が実行・破棄された */
+  | { type: 'calendar_decided'; operation: CalendarOperation }
   | { type: 'done'; model: string }
 
 export type PullEvent =
