@@ -88,6 +88,32 @@ def test_system_prompt_conversation_style_and_closing_reminder() -> None:
     assert "「おはよう」と言わない" not in build_system_prompt("タニス", [], time_of_day="07:30").split("## 最後に")[1]
 
 
+def test_system_prompt_says_ai_name_is_self_not_third_person() -> None:
+    # 「はやと、今日何してた？」に「はやとに聞いて」と返していた不具合の回帰テスト
+    prompt = build_system_prompt("はやと", [])
+    head = prompt[: prompt.index("## 行動原則")]
+    assert "「はやと」はあなた自身の名前で、別の人の名前ではありません。" in head
+    assert "「ねえ、はやと」と話しかけたりしたら、それはあなたへの呼びかけです。" in head
+    assert "はやとを第三者として扱いません" in head
+    assert "読みは" not in head  # 読みが未設定なら書かない
+    closing = prompt[prompt.index("## 最後に"):]
+    assert "「はやと」はあなたの名前。そう呼ばれたら自分への呼びかけ" in closing
+    # 記憶がなければ記憶についての注意は入れない
+    assert "あなた（AI）のこと" not in prompt
+
+
+def test_system_prompt_includes_reading_once() -> None:
+    from app.services.persona import name_forms
+
+    assert name_forms("隼人", "はやと") == ["隼人", "はやと"]
+    assert name_forms("はやと", "はやと") == ["はやと"]
+    assert name_forms(" はやと ", "") == ["はやと"]
+    prompt = build_system_prompt("隼人", [], memories=["ユーザーははやとと話すのが好き"], ai_reading="はやと")
+    assert "「隼人」（読みは「はやと」）はあなた自身の名前" in prompt
+    assert "ユーザーが「隼人」・「はやと」（" in prompt
+    assert "記憶やプロフィールに「隼人」・「はやと」が出てきたら、それはあなた（AI）のこと" in prompt
+
+
 def test_system_prompt_has_date_and_no_realtime_rule() -> None:
     from datetime import date
 

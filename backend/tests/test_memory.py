@@ -165,6 +165,28 @@ def test_extraction_only_uses_user_message(setup_done: TestClient, fake_ollama: 
     assert "好きな食べ物は？" in prompt and "ここからは抽出しない" in prompt
 
 
+def test_extraction_knows_ai_name_is_not_another_person(setup_done: TestClient, fake_ollama: FakeOllama) -> None:
+    # 「ねえ、タニス」の呼びかけを、ユーザーの知り合い「タニス」として記憶しないよう、抽出側にも AI の名前を伝える
+    setup_done.put("/api/settings", json={"wake_reading": "たにす"})
+    cid = create_conversation(setup_done)
+    chat(setup_done, "ねえ、タニス、今日何してた？", cid)
+    request = next(b for b in fake_ollama.paths("/api/chat") if "format" in b)
+    system = request["messages"][0]["content"]
+    assert "「タニス」・「たにす」はこの会話の AI の名前" in system
+    assert "別の人として記憶しない" in system
+
+
+def test_chat_prompt_treats_ai_name_and_reading_as_self(setup_done: TestClient, fake_ollama: FakeOllama) -> None:
+    setup_done.put("/api/settings", json={"wake_reading": "たにす"})
+    add_memory(setup_done, "ユーザーはタニスとよく話す")
+    chat(setup_done, "ねえ、たにす、今日何してた？")
+    prompt = system_prompt_of_last_chat(fake_ollama)
+    assert "「タニス」（読みは「たにす」）はあなた自身の名前で、別の人の名前ではありません。" in prompt
+    assert "「タニス」・「たにす」が出てきたら、それはあなた（AI）のこと" in prompt
+    closing = prompt[prompt.index("## 最後に"):]
+    assert "「タニス」・「たにす」はあなたの名前" in closing
+
+
 # ---------- RAG ----------
 
 

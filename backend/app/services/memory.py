@@ -28,6 +28,7 @@ from app.repositories.memories import (
 from app.repositories.settings import SettingsRepository
 from app.schemas import IMPORTANT_CATEGORIES, Memory, MemoryCreate, MemoryUpdate
 from app.services.extraction import extract_candidates
+from app.services.persona import name_forms
 from app.vector_index import VectorIndex
 
 logger = logging.getLogger(__name__)
@@ -268,7 +269,13 @@ class MemoryService:
         if not settings.auto_extract:
             return []
         try:
-            candidates = await extract_candidates(self.ollama, settings.model, user_text, previous_assistant)
+            candidates = await extract_candidates(
+                self.ollama,
+                settings.model,
+                user_text,
+                previous_assistant,
+                ai_names=name_forms(settings.ai_name, settings.wake_reading),
+            )
         except OllamaError as exc:
             logger.warning("Memory extraction failed (%s)", exc.code)
             return []
