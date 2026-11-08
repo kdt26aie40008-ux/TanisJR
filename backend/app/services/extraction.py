@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Sequence
 from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationError
@@ -87,12 +88,29 @@ class _Result(BaseModel):
     memories: list[Candidate]
 
 
-def build_messages(user_text: str, previous_assistant: str | None) -> list[dict[str, str]]:
+def ai_name_rule(ai_names: Sequence[str]) -> str:
+    """AI の名前（呼びかけ）を、ユーザーの知り合いとして記憶しないための説明。"""
+    names = "・".join(f"「{n}」" for n in ai_names if n.strip())
+    if not names:
+        return ""
+    return (
+        "\n\n## AI の名前\n"
+        f"{names}はこの会話の AI の名前。ユーザーがそう呼びかけたり、その名前に向けて話したりしているのは AI への呼びかけ。"
+        "その名前を、ユーザーの知り合い・家族・友人など別の人として記憶しない。呼びかけ自体は抽出しない。"
+    )
+
+
+def build_messages(
+    user_text: str, previous_assistant: str | None, ai_names: Sequence[str] = ()
+) -> list[dict[str, str]]:
     parts = []
     if previous_assistant:
         parts.append(f"【直前のAIの発言】（参考のみ。ここからは抽出しない）\n<ai>\n{previous_assistant}\n</ai>")
     parts.append(f"【ユーザーの発言】（ここから抽出する）\n<user>\n{user_text}\n</user>")
-    return [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": "\n\n".join(parts)}]
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT + ai_name_rule(ai_names)},
+        {"role": "user", "content": "\n\n".join(parts)},
+    ]
 
 
 def parse_candidates(raw: str) -> list[Candidate]:
@@ -110,11 +128,15 @@ def parse_candidates(raw: str) -> list[Candidate]:
 
 
 async def extract_candidates(
-    client: OllamaClient, model: str, user_text: str, previous_assistant: str | None
+    client: OllamaClient,
+    model: str,
+    user_text: str,
+    previous_assistant: str | None,
+    ai_names: Sequence[str] = (),
 ) -> list[Candidate]:
     raw = await client.chat_once(
         model,
-        build_messages(user_text, previous_assistant),
+        build_messages(user_text, previous_assistant, ai_names),
         {"temperature": 0.0, "num_ctx": 4096},
         response_format=RESPONSE_SCHEMA,
     )

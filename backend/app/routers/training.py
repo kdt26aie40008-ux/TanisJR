@@ -24,7 +24,9 @@ def _id() -> object:
 
 def _system_prompt(services: Services) -> str:
     settings = services.settings.get()
-    return build_system_prompt(settings.ai_name, services.profile.list(), language=settings.language)
+    return build_system_prompt(
+        settings.ai_name, services.profile.list(), language=settings.language, ai_reading=settings.wake_reading
+    )
 
 
 def _error(exc: TrainingError) -> AppError:

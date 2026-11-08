@@ -39,8 +39,47 @@ CONVERSATION_STYLE = """\
 - あなたは AI なので、過去の体験や思い出はない。「僕も昔そうだった」のような体験談を作らない。"""
 
 
+def name_forms(ai_name: str, reading: str = "") -> list[str]:
+    """AI の名前として扱う表記（名前と、名前と違う場合の読み）。"""
+    forms: list[str] = []
+    for value in (ai_name, reading):
+        value = value.strip()
+        if value and value not in forms:
+            forms.append(value)
+    return forms
+
+
+def _quoted(forms: Sequence[str]) -> str:
+    return "・".join(f"「{f}」" for f in forms)
+
+
+def self_name_rule(ai_name: str, reading: str = "") -> str:
+    """設定した名前を、AI が自分のこととして扱うための説明。
+
+    名前を書くだけだと、「ねえ、はやと、今日何してた？」の「はやと」を第三者だと受け取り
+    「はやとに聞いて」のように返すことがあったため、呼びかけは自分へのものだと明記する。
+    """
+    forms = name_forms(ai_name, reading)
+    if not forms:
+        return ""
+    name = forms[0]
+    reading_note = f"（読みは「{forms[1]}」）" if len(forms) > 1 else ""
+    return (
+        f"「{name}」{reading_note}はあなた自身の名前で、別の人の名前ではありません。"
+        f"ユーザーが{_quoted(forms)}（「{name}くん」「{name}ちゃん」「{name}さん」なども含む）と呼んだり、"
+        f"「ねえ、{name}」と話しかけたりしたら、それはあなたへの呼びかけです。"
+        f"続く質問（例:「{name}、今日何してた？」）はあなたへの質問なので、あなた自身のこととして答えます（体験を作り話にはしない）。"
+        f"「{name}に聞いて」「{name}さんは〜」のように、{name}を第三者として扱いません。"
+    )
+
+
 def closing_reminder(
-    ai_name: str, user_name: str, period: str | None, situation: bool = False, weather_known: bool = False
+    ai_name: str,
+    user_name: str,
+    period: str | None,
+    situation: bool = False,
+    weather_known: bool = False,
+    reading: str = "",
 ) -> str:
     """プロンプトの最後に置く念押し。
 
@@ -59,6 +98,8 @@ def closing_reminder(
         "## 最後に（いちばん大事）",
         f"- あなたは「{ai_name}」。{who}とは別の存在で、上のプロフィールや記憶はユーザーのこと。"
         f"ユーザーの好み・経験・苦手なことを、自分のこととして話さない。{story}。",
+        f"- {_quoted(name_forms(ai_name, reading)) or '「' + ai_name + '」'}はあなたの名前。そう呼ばれたら自分への呼びかけで、"
+        "第三者として扱わない（「○○に聞いて」と返さない）。",
         "- ユーザーがあいさつしていなければ、あいさつから始めない。",
         "- プロフィールの趣味や仕事の話は、今の話題に関係あるときだけ触れる。毎回持ち出さない。",
         realtime,
@@ -94,9 +135,11 @@ def build_system_prompt(
     final: str = "",
     situation: str = "",
     weather_known: bool = False,
+    ai_reading: str = "",
 ) -> str:
     """final: いちばん最後に置く、今回の返事だけの指示（予定の確認など。最後に書くほど守られやすい）。
-    situation: アバターのいまの居場所と天気（アプリが決めた設定）。"""
+    situation: アバターのいまの居場所と天気（アプリが決めた設定）。
+    ai_reading: AI の名前の読み（設定「あなたのこと」）。読みで呼ばれても自分のことだと分かるように渡す。"""
     today = today or date.today()
     principles = PRINCIPLES.replace("{language}", LANGUAGE_NAMES.get(language, "日本語"))
     if weather_known:
@@ -108,6 +151,7 @@ def build_system_prompt(
     user_name = next((e.content.strip() for e in profile if e.key == "self.user_name" and e.content.strip()), "")
     lines = [
         f"あなたの名前は「{ai_name}」です。",
+        *([rule] if (rule := self_name_rule(ai_name, ai_reading)) else []),
         *(
             [f"ユーザーの名前（呼び方）は「{user_name}」です。あなたとユーザーは別の存在です。"]
             if user_name
@@ -137,6 +181,11 @@ def build_system_prompt(
             "",
             "## 関連する記憶（過去の会話から得たユーザーの情報）",
             "会話に関係する場合だけ自然に活用する。古い・不確かな可能性があるので、重要な点は断定せず確認する。",
+            *(
+                [f"記憶やプロフィールに{_quoted(forms)}が出てきたら、それはあなた（AI）のことで、ユーザーの知り合いではない。"]
+                if (forms := name_forms(ai_name, ai_reading))
+                else []
+            ),
             *[f"- {m}" for m in memories],
         ]
     if extra:
@@ -144,7 +193,12 @@ def build_system_prompt(
     if situation:
         lines += ["", situation]
     period = time_period(time_of_day) if time_of_day else None
-    lines += ["", closing_reminder(ai_name, user_name, period, situation=bool(situation), weather_known=weather_known)]
+    lines += [
+        "",
+        closing_reminder(
+            ai_name, user_name, period, situation=bool(situation), weather_known=weather_known, reading=ai_reading
+        ),
+    ]
     if final:
         lines += ["", final]
     return "\n".join(lines)

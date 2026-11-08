@@ -175,6 +175,8 @@ async def chat(body: ChatRequest, services: Services = Depends(get_services)) ->
         final=calendar_flow,
         situation=describe_for_ai(scene),
         weather_known=scene.weather is not None,
+        # 読みで呼ばれても自分のことだと分かるように
+        ai_reading=settings.wake_reading,
     )
     turn = _Turn()
 
