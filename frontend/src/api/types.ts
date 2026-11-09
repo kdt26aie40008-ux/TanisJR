@@ -62,6 +62,22 @@ export interface AppSettings {
   weather_place: string
   weather_latitude: number | null
   weather_longitude: number | null
+  remote_enabled: boolean
+  remote_host: string
+}
+
+export interface RemoteDevice {
+  id: string
+  name: string
+  created_at: string
+  last_seen: string | null
+}
+
+export interface RemoteStatus {
+  enabled: boolean
+  url: string | null
+  tailscale: { installed: boolean; logged_in: boolean; dns_name: string | null; https_ready: boolean; serving: boolean }
+  devices: RemoteDevice[]
 }
 
 export type Sky = 'clear' | 'cloudy' | 'fog' | 'rain' | 'snow' | 'thunder'

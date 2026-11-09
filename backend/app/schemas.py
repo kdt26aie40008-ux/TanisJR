@@ -171,6 +171,9 @@ class AppSettings(StrictModel):
     weather_place: str = Field(default="", max_length=64)
     weather_latitude: float | None = Field(default=None, ge=-90, le=90)
     weather_longitude: float | None = Field(default=None, ge=-180, le=180)
+    # --- スマホから使う（Tailscale 経由。専用の操作でのみ変更する） ---
+    remote_enabled: bool = False
+    remote_host: str = Field(default="", max_length=253)
 
     @field_validator("fallback_model")
     @classmethod

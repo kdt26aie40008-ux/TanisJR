@@ -4,6 +4,7 @@ import type {
   Avatar,
   BackgroundKind,
   CustomBackground,
+  RemoteStatus,
   Scene,
   WeatherPlace,
   CalendarEvent,
@@ -195,6 +196,14 @@ export const api = {
   activateAvatar: (id: string) => json<{ active_id: string }>(`/api/avatars/${id}/activate`, { method: 'POST' }),
   deleteAvatar: (id: string) => json<{ deleted: boolean }>(`/api/avatars/${id}`, { method: 'DELETE' }),
   avatarFileUrl: (id: string) => `/api/avatars/${id}/file`,
+
+  // ----- スマホから使う -----
+  remoteStatus: () => json<RemoteStatus>('/api/remote/status'),
+  enableRemote: () => json<RemoteStatus>('/api/remote/enable', { method: 'POST' }),
+  disableRemote: () => json<RemoteStatus>('/api/remote/disable', { method: 'POST' }),
+  startPairing: () => json<{ pin: string; expires_at: number; url: string }>('/api/remote/pairing', { method: 'POST' }),
+  removeDevice: (id: string) => json<{ deleted: boolean }>(`/api/remote/devices/${id}`, { method: 'DELETE' }),
+  pair: (pin: string, name: string) => json<{ paired: boolean }>('/api/remote/pair', body({ pin, name })),
 
   // ----- 背景・天気 -----
   scene: () => json<{ scene: Scene; notice: string | null }>('/api/scene'),

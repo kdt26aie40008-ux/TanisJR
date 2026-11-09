@@ -17,7 +17,6 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
-from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app import __version__
 from app.backup import BackupError
@@ -41,12 +40,14 @@ from app.routers import calendar as calendar_router
 from app.routers import system as system_router
 from app.routers import training as training_router
 from app.routers import scene as scene_router
+from app.routers import remote as remote_router
 from app.backgrounds import BackgroundStore
 from app.services.weather import WeatherService
 from app.training.data import TrainingDataRepository
 from app.training.runner import TrainingManager
 from app.routers import memories as memories_router
-from app.security import OriginCheckMiddleware
+from app.remote import RemoteAccess
+from app.security import HostCheckMiddleware, OriginCheckMiddleware, RemoteGateMiddleware
 from app.services.data_protection import unlock
 from app.services.memory import MemoryService
 from app.speech.engine import EngineLauncher
@@ -98,6 +99,7 @@ def create_app(
     background: bool = False,
     aivis_engine_path: Path | None = None,
     weather_transport: httpx.AsyncBaseTransport | None = None,
+    remote: RemoteAccess | None = None,
 ) -> FastAPI:
     config = config or load_config()
     db = Database(config.db_path)
@@ -138,12 +140,20 @@ def create_app(
         ),
         weather=WeatherService(transport=weather_transport),
         backgrounds=BackgroundStore(config.data_dir / "backgrounds"),
+        remote=remote or RemoteAccess(config.data_dir, config.port),
         scheduler=NotificationScheduler(db, settings_repo, calendar, notifier),
         startup_dir=startup_dir,
         allow_process_control=allow_process_control,
         background=background,
     )
     unlock(services.vault, services.keystore, services.settings, services.profile)
+    # 「スマホから使う」がオンなら、Tailscale の名前からの接続を受け付ける（中継の設定は Tailscale 側に残っている）
+    try:
+        saved = services.settings.get()
+        if saved.remote_enabled and saved.remote_host and services.remote.host is None:
+            services.remote.host = saved.remote_host
+    except Exception as exc:  # noqa: BLE001  設定を読めなくても起動は続ける
+        logger.warning("Could not restore remote access: %s", type(exc).__name__)
     if vault.locked:
         logger.warning("データがロックされています: %s", vault.locked_reason)
     else:
@@ -175,8 +185,10 @@ def create_app(
     app.state.services = services
 
     # 後に追加したものが外側になる: Host検証 → Origin検証 → ルーター
-    app.add_middleware(OriginCheckMiddleware, allowed_origins=config.allowed_origins)
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(config.allowed_hosts))
+    # スマホからの接続（Tailscale 経由）はペアリングした端末だけ → 送信元の確認 → Host 検証
+    app.add_middleware(RemoteGateMiddleware, remote=services.remote)
+    app.add_middleware(OriginCheckMiddleware, allowed_origins=config.allowed_origins, remote=services.remote)
+    app.add_middleware(HostCheckMiddleware, allowed_hosts=config.allowed_hosts, remote=services.remote)
 
     @app.exception_handler(RequestValidationError)
     async def _validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
@@ -215,7 +227,7 @@ def create_app(
 
     for module in (
         health, setup, chat, settings, models, memories_router, data, speech, avatars, calendar_router, system_router, training_router,
-        assistant, scene_router,
+        assistant, scene_router, remote_router,
     ):
         app.include_router(module.router)
 

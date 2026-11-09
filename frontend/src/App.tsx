@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, errorMessage } from './api/client'
+import { api, ApiError, errorMessage } from './api/client'
+import { PairPage } from './pages/PairPage'
 import { useHashRoute } from './lib/useHashRoute'
 import { ROUTES } from './routes'
 import { AvatarPage } from './pages/AvatarPage'
@@ -17,6 +18,7 @@ type Boot =
   | { state: 'loading' }
   | { state: 'error'; message: string }
   | { state: 'locked'; reason: string }
+  | { state: 'pairing' }
   | { state: 'ready'; setupDone: boolean; aiName: string }
 
 export function App() {
@@ -34,6 +36,11 @@ export function App() {
       const [status, settings] = await Promise.all([api.setupStatus(), api.getSettings()])
       setBoot({ state: 'ready', setupDone: status.completed, aiName: settings.ai_name })
     } catch (err) {
+      // スマホから初めて開いたときは、合言葉でつなぐ
+      if (err instanceof ApiError && err.code === 'pairing_required') {
+        setBoot({ state: 'pairing' })
+        return
+      }
       setBoot({ state: 'error', message: errorMessage(err) })
     }
   }, [])
@@ -56,6 +63,9 @@ export function App() {
         </div>
       </div>
     )
+  }
+  if (boot.state === 'pairing') {
+    return <PairPage onPaired={() => void load()} />
   }
   if (boot.state === 'locked') {
     return <RestorePage reason={boot.reason} onRestored={() => void load()} />

@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Config
 from app.main import create_app
+from app.remote import RemoteAccess
 
 ORIGIN = "http://127.0.0.1:8765"
 
@@ -304,6 +305,42 @@ def fake_weather() -> FakeWeather:
     return FakeWeather()
 
 
+REMOTE_HOST = "mypc.tail1234.ts.net"
+
+
+class FakeTailscale:
+    """tailscale コマンドの代わり。実行されたコマンドを記録する。"""
+
+    def __init__(self) -> None:
+        self.logged_in = True
+        self.https = True
+        self.serving = False
+        self.commands: list[list[str]] = []
+
+    def __call__(self, args: list[str]) -> tuple[int, str]:
+        self.commands.append(args)
+        if args[:2] == ["status", "--json"]:
+            return 0, json.dumps(
+                {
+                    "BackendState": "Running" if self.logged_in else "NeedsLogin",
+                    "Self": {"DNSName": REMOTE_HOST + "."},
+                    "CertDomains": [REMOTE_HOST] if self.https else [],
+                }
+            )
+        if args[:2] == ["serve", "status"]:
+            web = {f"{REMOTE_HOST}:443": {"Handlers": {"/": {"Proxy": "http://127.0.0.1:8765"}}}} if self.serving else {}
+            return 0, json.dumps({"Web": web})
+        if args[0] == "serve":
+            self.serving = "off" not in args
+            return 0, ""
+        return 1, ""
+
+
+@pytest.fixture
+def fake_tailscale() -> FakeTailscale:
+    return FakeTailscale()
+
+
 @pytest.fixture
 def config(tmp_path: Path) -> Config:
     return Config(
@@ -327,6 +364,7 @@ def make_client(
     fake_google: FakeGoogle,
     fake_notifier: FakeNotifier,
     fake_weather: "FakeWeather",
+    fake_tailscale: "FakeTailscale",
 ) -> Iterator[Callable[[], TestClient]]:
     """同じデータフォルダーでアプリを起動し直せるようにする。"""
     clients: list[TestClient] = []
@@ -347,6 +385,8 @@ def make_client(
             aivis_engine_path=tmp_path / "no-aivis" / "run.exe",
             # 天気予報はインターネットに問い合わせない（テストごとに差し替えられる）
             weather_transport=fake_weather.transport(),
+            # 実際の Tailscale は使わない
+            remote=RemoteAccess(config.data_dir, config.port, runner=fake_tailscale),
         )
         c = TestClient(app, headers={"Origin": ORIGIN})
         c.__enter__()

@@ -23,7 +23,8 @@ from app.routers.sse import sse_response
 from app.services.scene import describe_for_ai
 from app.schemas import ChatRequest
 from app.services.chat import stream_chat
-from app.services.persona import build_system_prompt
+from app.services.greeting import without_unasked_greeting
+from app.services.persona import build_system_prompt, is_self_intro_request, self_intro_instruction
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +162,11 @@ async def chat(body: ChatRequest, services: Services = Depends(get_services)) ->
     if use_calendar and calendar_on:
         calendar_flow, calendar_events = await _calendar_turn(services, settings.model, user_text, upcoming, awaiting)
 
+    # 自己紹介を頼まれたら、話す内容を最後に念押しする（ユーザーの趣味を自分のことにしないため）
+    final = "\n\n".join(
+        part for part in (calendar_flow, self_intro_instruction(settings.ai_name) if is_self_intro_request(user_text) else "") if part
+    )
+
     # アバターのいまの居場所と天気（天気の取得に失敗しても会話は続ける）
     scene, _ = await current_scene(services)
     system_prompt = build_system_prompt(
@@ -172,7 +178,7 @@ async def chat(body: ChatRequest, services: Services = Depends(get_services)) ->
         # 時刻に合ったあいさつをするため
         time_of_day=datetime.now().strftime("%H:%M"),
         # 予定の確認の進め方は、守られやすいようプロンプトの最後に置く
-        final=calendar_flow,
+        final=final,
         situation=describe_for_ai(scene),
         weather_known=scene.weather is not None,
         # 読みで呼ばれても自分のことだと分かるように
@@ -192,7 +198,8 @@ async def chat(body: ChatRequest, services: Services = Depends(get_services)) ->
         # 予定の確認カード（新しい下書き・会話で決まった結果）は、返事より先に送る
         for item in calendar_events:
             yield item
-        async for event in stream_chat(services.ollama, settings, system_prompt, body.messages):
+        reply = stream_chat(services.ollama, settings, system_prompt, body.messages)
+        async for event in without_unasked_greeting(reply, user_text):
             if event["type"] == "token":
                 turn.text += event["content"]
             elif event["type"] == "done" and conversation_id and turn.text.strip():

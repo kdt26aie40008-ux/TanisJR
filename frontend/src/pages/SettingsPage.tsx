@@ -4,6 +4,7 @@ import type { AppSettings, CatalogModel, ModelStatus, ProfileEntry } from '../ap
 import { BackupCreate, BackupRestore } from '../components/BackupPanel'
 import { BehaviorSettings } from '../components/BehaviorSettings'
 import { InstallPanel } from '../components/InstallPanel'
+import { RemotePanel } from '../components/RemotePanel'
 import { ProactiveSettings, WakeSettings } from '../components/AssistantSettings'
 import { SceneSettings } from '../components/SceneSettings'
 import { SelfProfilePanel } from '../components/SelfProfilePanel'
@@ -70,7 +71,14 @@ export function SettingsPage({ onAiNameChange, onRestored }: Props) {
   const saveSettings = async (): Promise<boolean> => {
     try {
       // アバターの選択・利用規約の確認状態・呼びかけ機能のオンオフは、それぞれ専用の操作でのみ変更する
-      const { avatar_id: _avatar, tts_acknowledged_speakers: _acks, wake_enabled: _wake, ...values } = settings
+      const {
+        avatar_id: _avatar,
+        tts_acknowledged_speakers: _acks,
+        wake_enabled: _wake,
+        remote_enabled: _remote,
+        remote_host: _remoteHost,
+        ...values
+      } = settings
       const saved = await api.updateSettings(values)
       setSettings(saved)
       onAiNameChange(saved.ai_name)
@@ -244,6 +252,11 @@ export function SettingsPage({ onAiNameChange, onRestored }: Props) {
             {feedback.text}
           </p>
         )}
+      </div>
+
+      <div className="panel">
+        <h2>スマホから使う</h2>
+        <RemotePanel />
       </div>
 
       <InstallPanel />
