@@ -2018,3 +2018,64 @@ textarea {
     max-width: 60%;
   }
 }
+/* ===== スマホから使う ===== */
+.check-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.5em 0;
+  font-size: 0.9rem;
+}
+.pairing-box {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1em;
+  align-items: center;
+  margin: 0.8em 0;
+  padding: 0.8em 1em;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.pairing-box img {
+  border-radius: 10px;
+  background: #fff;
+}
+.pin-display {
+  margin: 0.3em 0 0;
+  font-size: 2.2rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  font-variant-numeric: tabular-nums;
+}
+.device-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.3em 0;
+  display: grid;
+  gap: 0.3em;
+}
+.device-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.8em;
+  flex-wrap: wrap;
+}
+.pair-panel {
+  width: min(420px, 92vw);
+  display: grid;
+  gap: 0.8em;
+  justify-items: center;
+  text-align: center;
+}
+.pair-panel img {
+  border-radius: 18px;
+}
+.pair-panel .field {
+  width: 100%;
+  text-align: left;
+}
+.pin-input {
+  font-size: 1.8rem;
+  letter-spacing: 0.3em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}

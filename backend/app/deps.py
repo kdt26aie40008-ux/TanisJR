@@ -9,6 +9,7 @@ from fastapi import Request
 
 from app.avatars import AvatarStore
 from app.backgrounds import BackgroundStore
+from app.remote import RemoteAccess
 from app.services.weather import WeatherService
 from app.calendar.google import GoogleClient
 from app.calendar.service import CalendarService
@@ -55,6 +56,7 @@ class Services:
     training: TrainingManager
     weather: WeatherService
     backgrounds: BackgroundStore
+    remote: RemoteAccess
     scheduler: NotificationScheduler | None = None
     # None は実際のスタートアップフォルダー（テストでは一時フォルダーを渡す）
     startup_dir: Path | None = None

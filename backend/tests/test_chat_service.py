@@ -71,21 +71,31 @@ def test_system_prompt_conversation_style_and_closing_reminder() -> None:
     from app.schemas import ProfileEntry
 
     name = ProfileEntry(
-        key="self.user_name", question="呼んでほしい名前", content="カッパ", source="user_edit", importance=10,
+        key="self.user_name", question="呼んでほしい名前", content="ケン", source="user_edit", importance=10,
         confirmation_status="confirmed", created_at="", updated_at="",
     )
     prompt = build_system_prompt("タニス", [name], time_of_day="21:30", extra="## カレンダー")
     assert "## 会話のしかた" in prompt
-    assert "ユーザーの名前（呼び方）は「カッパ」" in prompt
+    assert "ユーザーの名前（呼び方）は「ケン」" in prompt
     assert "今の時刻は 21:30（夜）" in prompt
     # 念押しは最後に置く（カレンダーなどの追加情報より後）
     assert prompt.rstrip().splitlines()[0] == "あなたの名前は「タニス」です。"
     closing = prompt[prompt.index("## 最後に"):]
     assert prompt.index("## カレンダー") < prompt.index("## 最後に")
-    assert "ユーザー（カッパ）とは別の存在" in closing
-    assert "今は夜なので「おはよう」と言わない" in closing
-    # 朝は「おはよう」を止めない
-    assert "「おはよう」と言わない" not in build_system_prompt("タニス", [], time_of_day="07:30").split("## 最後に")[1]
+    assert "ユーザー（ケン）とは別の存在" in closing
+    assert "今は夜なので、あいさつするなら「こんばんは」を使い、「おはよう」・「こんにちは」とは言わない" in closing
+    # あいさつされていなければ、あいさつしない（毎回「こんばんは」から始めない）
+    assert "それ以外は、あいさつを付けずにすぐ本題に入る" in closing
+    assert "あいさつしていなければ、あいさつから始めない" not in closing  # 1行にまとめた
+    # 朝は「おはよう」、昼は「こんにちは」を使う
+    morning = build_system_prompt("タニス", [], time_of_day="07:30").split("## 最後に")[1]
+    assert "「おはよう」を使い、「こんにちは」・「こんばんは」とは言わない" in morning
+    noon = build_system_prompt("タニス", [], time_of_day="13:00").split("## 最後に")[1]
+    assert "「こんにちは」を使い、「おはよう」・「こんばんは」とは言わない" in noon
+    # 時刻が分からなければ、使う言葉は指定せず、あいさつから始めないことだけ伝える
+    unknown = build_system_prompt("タニス", []).split("## 最後に")[1]
+    assert "あいさつするなら「" not in unknown
+    assert "あいさつしていなければ、あいさつから始めない" in unknown
 
 
 def test_system_prompt_says_ai_name_is_self_not_third_person() -> None:
@@ -121,3 +131,47 @@ def test_system_prompt_has_date_and_no_realtime_rule() -> None:
     assert "2026年11月2日（月）" in prompt
     assert "でっち上げない" in prompt
     assert "ユーザー本人ではなく" in prompt
+
+
+def test_self_intro_request_and_instruction() -> None:
+    from app.services.persona import is_self_intro_request, self_intro_instruction
+
+    for text in ("自己紹介して", "自己紹介してや", "あなたは誰？", "君って何者？", "誰なん？"):
+        assert is_self_intro_request(text), text
+    for text in ("おすすめの勉強法ある？", "明日の予定は？"):
+        assert not is_self_intro_request(text), text
+    instruction = self_intro_instruction("ミナ")
+    assert "名前はミナ" in instruction
+    assert "自己紹介では一切触れない" in instruction
+    # 例の言葉をなぞらないよう、具体例は書かない
+    assert "ゲーム" not in instruction
+    prompt = build_system_prompt("ミナ", [], final=instruction)
+    assert prompt.rstrip().endswith(instruction.splitlines()[-1])
+
+
+def test_system_prompt_gives_ai_its_own_character() -> None:
+    prompt = build_system_prompt("タニス", [], time_of_day="21:30")
+    head, closing = prompt.split("## 最後に")
+    # ユーザーの分身ではなく、別の人格として話す
+    assert "第二の自分" not in prompt
+    assert "## あなた自身（タニス）について" in head
+    assert "ユーザーとは別の人格" in head
+    assert "あなた自身（タニス）を紹介する" in head
+    # 性格は似ているが、意見は自分のもの
+    assert "ユーザーの性格に似ている" in head
+    assert "意見は自分のものを持つ" in head
+    assert "客観的に見て" in head
+    # 理解しているから注意・相談・提案をする
+    assert "責めずに、理由を添えて一言伝える" in head
+    assert "選択肢と自分のおすすめを理由つきで伝える" in head
+    assert "似ているのは性格（気質）と話し方だけ" in head
+    # 話し方を合わせ、英単語を混ぜない
+    assert "あなたも同じ方言・同じくだけ具合で話す" in closing
+    assert "文の途中に英単語を混ぜない" in closing
+    english = build_system_prompt("タニス", [], language="en").split("## 最後に")[1]
+    assert "英単語を混ぜない" not in english
+    assert "タニス自身（性格・役割）を紹介する" in closing
+    assert "ただ同意するだけにしない" in closing
+    assert "「自分も好き」「〜も好きやから」と言わない" in closing
+    assert "「前に〜って言ってたよね」と作らない" in closing
+    assert "あいさつするなら「こんばんは」を使い" in closing

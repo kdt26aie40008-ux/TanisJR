@@ -105,7 +105,7 @@ def test_change_never_touches_other_events(setup_done: TestClient, fake_ollama: 
     day = at(1, 10)
     existing = setup_done.post(
         "/api/calendar/operations",
-        json={"action": "create", "draft": {"summary": "母校の文化祭", "start": day, "end": at(1, 11)}},
+        json={"action": "create", "draft": {"summary": "前からある予定", "start": day, "end": at(1, 11)}},
     ).json()["result_event_id"]
     queue(
         fake_ollama,
@@ -118,7 +118,7 @@ def test_change_never_touches_other_events(setup_done: TestClient, fake_ollama: 
     say(setup_done, "明日15時に美容院の予定入れて", "入れていい？", "やっぱ16時にして")
     say(setup_done, "明日15時に美容院の予定入れて", "入れていい？", "やっぱ16時にして", "16時でいい？", "うん")
     events = {e["summary"]: e for e in setup_done.get("/api/calendar/events?days=7").json()}
-    assert events["母校の文化祭"]["id"] == existing and events["母校の文化祭"]["start"].startswith(day)
+    assert events["前からある予定"]["id"] == existing and events["前からある予定"]["start"].startswith(day)
     assert events["美容院"]["start"].endswith("16:00:00+09:00") or "T16:00" in events["美容院"]["start"]
 
 
