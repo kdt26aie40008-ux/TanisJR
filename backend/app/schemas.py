@@ -31,6 +31,35 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class VoiceTuneModel(StrictModel):
+    """声の調整。pitch は AivisSpeech の範囲（-0.15〜0.15）。"""
+
+    style_id: int = Field(ge=0)
+    speed: float = Field(default=1.0, ge=0.5, le=2.0)
+    pitch: float = Field(default=0.0, ge=-0.15, le=0.15)
+    intonation: float = Field(default=1.0, ge=0.0, le=2.0)
+    tempo: float = Field(default=1.0, ge=0.0, le=2.0)
+    volume: float = Field(default=1.0, ge=0.0, le=2.0)
+
+
+class CustomVoice(VoiceTuneModel):
+    """設定で作った声（元の声 + 調整）。"""
+
+    id: str = Field(pattern=r"^[0-9a-f]{8}$")
+    name: str = Field(min_length=1, max_length=20)
+
+    @field_validator("name")
+    @classmethod
+    def _clean_name(cls, value: str) -> str:
+        value = clean_text(value)
+        if not value:
+            raise ValueError("名前を入力してください")
+        return value
+
+
+MAX_CUSTOM_VOICES = 20
+
+
 def _validate_ai_name(value: str) -> str:
     value = clean_text(value)
     if not value:
@@ -154,6 +183,9 @@ class AppSettings(StrictModel):
     tts_engine_autostart: bool = True
     # 利用規約を確認した AivisSpeech の話者 (speaker_uuid)
     tts_acknowledged_speakers: list[str] = Field(default_factory=list)
+    # 設定で作った声と、使う声（作った声の id。None なら tts_speaker と tts_speed を使う）
+    tts_custom_voices: list[CustomVoice] = Field(default_factory=list, max_length=MAX_CUSTOM_VOICES)
+    tts_voice: str | None = Field(default=None, pattern=r"^[0-9a-f]{8}$")
     avatar_id: str = ""
     # --- カレンダー・通知 (Phase 4) ---
     # 予定の保存先。local: アプリ内（この PC のこのユーザーだけ）/ google: Google カレンダー
@@ -221,6 +253,9 @@ class SettingsUpdate(StrictModel):
     tts_speed: float | None = Field(default=None, ge=0.5, le=2.0)
     tts_auto_read: bool | None = None
     tts_engine_autostart: bool | None = None
+    tts_custom_voices: list[CustomVoice] | None = Field(default=None, max_length=MAX_CUSTOM_VOICES)
+    # 作った声の id。"" で作った声を使わない（元の声を使う）
+    tts_voice: str | None = Field(default=None, pattern=r"^([0-9a-f]{8})?$")
     calendar_backend: Literal["local", "google"] | None = None
     notifications_enabled: bool | None = None
     default_reminder_minutes: int | None = Field(default=None, ge=0, le=1440)
@@ -364,6 +399,14 @@ class TtsRequest(StrictModel):
     text: str = Field(min_length=1, max_length=2000)
     # 未指定なら設定の話者を使う（設定画面の試聴用に指定可能）
     speaker: int | None = Field(default=None, ge=0)
+    # 設定画面で作っている途中の声の試聴用（保存前の調整で読み上げる）
+    tune: VoiceTuneModel | None = None
+
+
+class VoiceInstallRequest(StrictModel):
+    aivm_uuid: str = Field(pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+    # ダウンロードの容量・入手元を確認したことの確認
+    confirmed: bool
 
 
 class SpeakerAck(StrictModel):

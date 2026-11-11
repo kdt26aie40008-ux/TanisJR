@@ -79,7 +79,8 @@ export function SettingsPage({ onAiNameChange, onRestored }: Props) {
         remote_host: _remoteHost,
         ...values
       } = settings
-      const saved = await api.updateSettings(values)
+      // 「元の声を使う」は空文字で送る（null は「変更なし」として扱われるため）
+      const saved = await api.updateSettings({ ...values, tts_voice: values.tts_voice ?? '' })
       setSettings(saved)
       onAiNameChange(saved.ai_name)
       return true

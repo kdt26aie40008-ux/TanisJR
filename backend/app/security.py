@@ -63,7 +63,8 @@ class HostCheckMiddleware(BaseHTTPMiddleware):
 # スマホから使うとき、ペアリングしていなくても使える API（状態の確認とペアリングだけ）
 _REMOTE_OPEN = frozenset({"/api/health", "/api/remote/pair", "/api/remote/me"})
 # PC 本体からだけできる操作（サーバーの停止、スマホの登録・解除、データの書き出し・読み込み）
-_LOCAL_ONLY = ("/api/system", "/api/remote", "/api/data")
+# 声の追加・削除（数百MBのダウンロード）も PC 本体からだけ
+_LOCAL_ONLY = ("/api/system", "/api/remote", "/api/data", "/api/speech/voices")
 
 
 class RemoteGateMiddleware(BaseHTTPMiddleware):

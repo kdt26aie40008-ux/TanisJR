@@ -17,6 +17,8 @@ const BASE = {
   tts_speaker: 1,
   tts_speed: 1,
   tts_auto_read: true,
+  tts_custom_voices: [],
+  tts_voice: null,
 } as unknown as AppSettings
 
 const STT = {

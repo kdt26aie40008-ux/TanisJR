@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import time
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -40,6 +41,21 @@ def clean_for_speech(text: str) -> str:
     text = _URL.sub("（URL）", text)
     text = _MARKDOWN.sub("", text)
     return _SPACES.sub(" ", text).strip()[:MAX_TTS_CHARS]
+
+
+@dataclass(frozen=True)
+class VoiceTune:
+    """声の調整（AivisSpeech の AudioQuery の値）。
+
+    pitch は -0.15〜0.15（0 以外にすると AivisSpeech の仕様で少し音質が落ちる）。
+    intonation はスタイルらしさの強さ、tempo は話す速さの緩急。
+    """
+
+    speed: float = 1.0
+    pitch: float = 0.0
+    intonation: float = 1.0
+    tempo: float = 1.0
+    volume: float = 1.0
 
 
 class AivisClient:
@@ -90,8 +106,53 @@ class AivisClient:
         # 画像（base64）は不要なので利用規約の本文だけ返す
         return str(data.get("policy", ""))
 
-    async def synthesize(self, text: str, style_id: int, speed: float) -> bytes:
+    async def synthesize(self, text: str, style_id: int, tune: VoiceTune | float = 1.0) -> bytes:
+        if not isinstance(tune, VoiceTune):
+            tune = VoiceTune(speed=tune)
         query = (await self._request("POST", "/audio_query", params={"text": text, "speaker": style_id})).json()
-        query["speedScale"] = speed
+        query["speedScale"] = tune.speed
+        query["pitchScale"] = tune.pitch
+        query["intonationScale"] = tune.intonation
+        query["tempoDynamicsScale"] = tune.tempo
+        query["volumeScale"] = tune.volume
         response = await self._request("POST", "/synthesis", params={"speaker": style_id}, json=query)
         return response.content
+
+    # ---------- 声のモデル（AIVMX）の管理 ----------
+
+    async def installed_models(self) -> list[dict[str, Any]]:
+        """インストール済みの音声モデル（aivm_uuid・名前・含まれる話者の speaker_uuid）。"""
+        data = (await self._request("GET", "/aivm_models")).json()
+        return [
+            {
+                "aivm_uuid": str(uuid),
+                "name": str((info.get("manifest") or {}).get("name") or uuid),
+                "speaker_uuids": [
+                    str((s.get("speaker") or {}).get("speaker_uuid", "")) for s in info.get("speakers") or []
+                ],
+            }
+            for uuid, info in data.items()
+        ]
+
+    async def install_model(self, url: str) -> None:
+        """URL の音声モデルを AivisSpeech にインストールする（AivisSpeech がダウンロードする。数分かかる）。"""
+        try:
+            response = await self._client.post(
+                "/aivm_models/install",
+                files={"url": (None, url)},
+                timeout=httpx.Timeout(connect=5.0, read=1800.0, write=30.0, pool=5.0),
+            )
+        except httpx.TransportError as exc:
+            raise unavailable() from exc
+        if response.status_code not in (200, 204):
+            raise TtsError("声の追加に失敗しました。時間をおいてもう一度お試しください。", "voice_install_failed", 502)
+        self._speakers = None
+
+    async def uninstall_model(self, aivm_uuid: str) -> None:
+        try:
+            response = await self._client.delete(f"/aivm_models/{aivm_uuid}/uninstall")
+        except httpx.TransportError as exc:
+            raise unavailable() from exc
+        if response.status_code not in (200, 204):
+            raise TtsError("声を削除できませんでした。", "voice_uninstall_failed", 502)
+        self._speakers = None

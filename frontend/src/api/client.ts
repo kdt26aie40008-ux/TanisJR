@@ -17,6 +17,10 @@ import type {
   TrainingParams,
   TrainingRun,
   SpeakersResponse,
+  HubVoice,
+  InstalledVoices,
+  VoiceInstallJob,
+  VoiceTune,
   SttStatus,
   Transcript,
   ChatEvent,
@@ -178,10 +182,21 @@ export const api = {
   speakerPolicy: (uuid: string) => json<{ policy: string }>(`/api/speech/tts/speakers/${uuid}/policy`),
   acknowledgeSpeaker: (uuid: string) =>
     json<{ acknowledged: boolean }>('/api/speech/tts/acknowledge', body({ speaker_uuid: uuid })),
-  synthesize: async (text: string, speaker?: number, signal?: AbortSignal) => {
-    const response = await send('/api/speech/tts', { ...body(speaker === undefined ? { text } : { text, speaker }), signal })
+  /** voice: 元の声のスタイル id、または試聴用の調整（未指定なら設定の声） */
+  synthesize: async (text: string, voice?: number | VoiceTune, signal?: AbortSignal) => {
+    const payload = voice === undefined ? { text } : typeof voice === 'number' ? { text, speaker: voice } : { text, tune: voice }
+    const response = await send('/api/speech/tts', { ...body(payload), signal })
     return response.arrayBuffer()
   },
+  hubVoices: (timbre: string | null) =>
+    json<{ timbres: { id: string; label: string }[]; voices: HubVoice[] }>(
+      `/api/speech/voices/hub${timbre ? `?${new URLSearchParams({ timbre })}` : ''}`,
+    ),
+  hubSampleUrl: (uuid: string, index = 0) => `/api/speech/voices/hub/${uuid}/sample/${index}`,
+  installedVoices: () => json<InstalledVoices>('/api/speech/voices/installed'),
+  installVoice: (uuid: string) =>
+    json<{ job: VoiceInstallJob }>('/api/speech/voices/install', body({ aivm_uuid: uuid, confirmed: true })),
+  uninstallVoice: (uuid: string) => json<{ removed: boolean }>(`/api/speech/voices/${uuid}`, { method: 'DELETE' }),
 
   // ----- アバター -----
   avatars: () => json<{ avatars: Avatar[]; active_id: string | null }>('/api/avatars'),

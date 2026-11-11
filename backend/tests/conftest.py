@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import math
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -92,12 +93,35 @@ class FakeAivis:
     def __init__(self) -> None:
         self.available = True
         self.requests: list[dict] = []
+        # インストール済みの音声モデル {aivm_uuid: 名前}
+        self.models: dict[str, str] = {"a59cb814-0083-4369-8542-f51a29e72af7": "テスト話者"}
+        self.installed_urls: list[str] = []
 
     def transport(self) -> httpx.MockTransport:
         def handle(request: httpx.Request) -> httpx.Response:
             if not self.available:
                 raise httpx.ConnectError("refused")
-            self.requests.append({"path": request.url.path, "params": dict(request.url.params)})
+            body = json.loads(request.content) if request.headers.get("content-type") == "application/json" else None
+            self.requests.append({"path": request.url.path, "params": dict(request.url.params), "json": body})
+            if request.url.path == "/version":
+                return httpx.Response(200, json="1.0.0")
+            if request.url.path == "/aivm_models":
+                return httpx.Response(
+                    200,
+                    json={
+                        uuid: {"manifest": {"name": name}, "speakers": [{"speaker": {"speaker_uuid": SPEAKER_UUID}}]}
+                        for uuid, name in self.models.items()
+                    },
+                )
+            if request.url.path == "/aivm_models/install":
+                url = re.search(rb'name=\"url\"\s+(https://\S+)', request.content)
+                self.installed_urls.append(url.group(1).decode() if url else "")
+                uuid = self.installed_urls[-1].split("/aivm-models/")[1].split("/")[0]
+                self.models[uuid] = "追加した声"
+                return httpx.Response(204)
+            if request.url.path.startswith("/aivm_models/") and request.url.path.endswith("/uninstall"):
+                self.models.pop(request.url.path.split("/")[2], None)
+                return httpx.Response(204)
             if request.url.path == "/speakers":
                 return httpx.Response(
                     200,
@@ -246,6 +270,43 @@ def fake_ollama() -> FakeOllama:
     return FakeOllama()
 
 
+HUB_ELDER = "696c98a2-c0b7-4fe7-8cf2-c7e9b8a9bd82"
+HUB_SAMPLE = "https://assets.aivis-project.com/aivm-models/x/sample.wav"
+
+
+class FakeVoiceHub:
+    """AivisHub の公開 API の代わり（インターネットに接続しない）。"""
+
+    def __init__(self) -> None:
+        self.searches: list[list[str]] = []
+        self.sample_requests: list[str] = []
+
+    def transport(self) -> httpx.MockTransport:
+        def handle(request: httpx.Request) -> httpx.Response:
+            if request.url.host == "api.aivis-project.com" and request.url.path == "/v1/aivm-models/search":
+                self.searches.append(request.url.params.get_list("voice_timbres"))
+                return httpx.Response(200, json={"total": 1, "aivm_models": [{
+                    "aivm_model_uuid": HUB_ELDER, "name": "おじいちゃんの声", "voice_timbre": "ElderlyMale",
+                    "description": "落ち着いた声", "user": {"name": "作者"}, "total_download_count": 100,
+                    "speakers": [{"styles": [{"name": "ノーマル", "voice_samples": [
+                        {"audio_url": HUB_SAMPLE, "transcript": "こんにちは"},
+                        {"audio_url": "https://evil.example/x.wav", "transcript": "外部"},
+                    ]}]}],
+                    "model_files": [{"model_type": "AIVMX", "license_type": "ACML 1.0", "file_size": 252925401}],
+                }]})
+            if str(request.url) in (HUB_SAMPLE, "https://evil.example/x.wav"):
+                self.sample_requests.append(str(request.url))
+                return httpx.Response(200, content=WAV_BYTES)
+            return httpx.Response(404)
+
+        return httpx.MockTransport(handle)
+
+
+@pytest.fixture
+def fake_hub() -> FakeVoiceHub:
+    return FakeVoiceHub()
+
+
 @pytest.fixture
 def fake_aivis() -> FakeAivis:
     return FakeAivis()
@@ -365,6 +426,7 @@ def make_client(
     fake_notifier: FakeNotifier,
     fake_weather: "FakeWeather",
     fake_tailscale: "FakeTailscale",
+    fake_hub: FakeVoiceHub,
 ) -> Iterator[Callable[[], TestClient]]:
     """同じデータフォルダーでアプリを起動し直せるようにする。"""
     clients: list[TestClient] = []
@@ -387,6 +449,8 @@ def make_client(
             weather_transport=fake_weather.transport(),
             # 実際の Tailscale は使わない
             remote=RemoteAccess(config.data_dir, config.port, runner=fake_tailscale),
+            # AivisHub（声の一覧）にも接続しない
+            voice_hub_transport=fake_hub.transport(),
         )
         c = TestClient(app, headers={"Origin": ORIGIN})
         c.__enter__()
