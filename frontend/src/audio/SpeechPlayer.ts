@@ -1,4 +1,5 @@
 import { api, errorMessage } from '../api/client'
+import type { VoiceTune } from '../api/types'
 
 /**
  * 読み上げキュー。文ごとに合成を先行して開始し、順番に再生する。
@@ -37,14 +38,15 @@ export class SpeechPlayer {
     void this.context().resume()
   }
 
-  enqueue(text: string, speaker?: number): void {
+  /** voice: 元の声のスタイル id か、試聴用の調整（未指定なら設定の声） */
+  enqueue(text: string, voice?: number | VoiceTune): void {
     const generation = this.generation
     const ctx = this.context()
     const signal = this.controller.signal
     // 合成は再生より先に進めておくが、同時には1件ずつ行う。
     // 一度に全部頼むとエンジンが分散して処理し、最初の1文が出るまでが遅くなるため。
     const audio = this.synthChain
-      .then(() => (generation === this.generation ? api.synthesize(text, speaker, signal) : Promise.reject(new Error('stopped'))))
+      .then(() => (generation === this.generation ? api.synthesize(text, voice, signal) : Promise.reject(new Error('stopped'))))
       .then((buf) => ctx.decodeAudioData(buf))
     this.synthChain = audio.then(
       () => undefined,

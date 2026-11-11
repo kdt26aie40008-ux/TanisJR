@@ -171,6 +171,8 @@ TanisJr/
 - 話者（スタイル）ごとに利用規約 (`/speaker_info` の policy) を表示し、**確認した話者だけ読み上げに使用可能**（`tts_acknowledged_speakers`）。
 - 長い応答は文単位に分割し、ストリーミング中に文が完成した順に合成・再生（初回再生までの待ち時間短縮）。
 - 再生は Web Audio。AnalyserNode の音量を口パクに使う。
+- **声を作る**: 設定 `tts_custom_voices`（元のスタイル + 高さ `pitchScale`(-0.15〜0.15)・速さ・感情の強さ `intonationScale`・緩急 `tempoDynamicsScale`・音量）を最大20個保存し、`tts_voice` で選ぶ。読み上げの声は「試聴中の調整 → 試聴する元の声 → 作った声 → 元の声」の順で決める（`routers/speech.py: resolve_voice`）。高さを 0 から変えると AivisSpeech の仕様で音質が少し落ちる。
+- **声を増やす**（`app/speech/voice_hub.py`）: AivisHub の公開 API（`api.aivis-project.com/v1/aivm-models/search`、`voice_timbres` で種類を絞る）で一覧を取り、AivisSpeech の `/aivm_models/install` にダウンロード URL を渡して AivisSpeech にダウンロードさせる（1つ約240MB）。一覧は設定画面で「声の一覧を開く」を押したときだけ取得し、会話の内容は送らない。試聴はアプリが AivisHub のサンプル音声（`assets.aivis-project.com` のみ）を中継する（CSP を広げないため）。追加・試聴は一覧に出たモデルだけ受け付ける。追加・削除は PC 本体からだけ（`/api/speech/voices` はスマホから使えない）。最後の1つの声は削除できない。追加した声も、使う前に利用規約の確認が必要。
 
 ### 7.3 3Dアバター（Three.js + @pixiv/three-vrm）
 - VRM は `data/avatars/<id>.vrm` に保存し、メタ情報（名前・作者・ライセンス・クレジット要否）を SQLite `avatars` に保存。

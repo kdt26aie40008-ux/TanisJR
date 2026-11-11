@@ -21,6 +21,7 @@ from app.config import Config
 from app.speech.stt import Transcriber
 from app.speech.engine import EngineLauncher
 from app.speech.tts import AivisClient
+from app.speech.voice_hub import VoiceHub
 from app.crypto import KeyStore, Vault
 from app.db import Database
 from app.llm.ollama import OllamaClient
@@ -57,6 +58,7 @@ class Services:
     weather: WeatherService
     backgrounds: BackgroundStore
     remote: RemoteAccess
+    voice_hub: VoiceHub
     scheduler: NotificationScheduler | None = None
     # None は実際のスタートアップフォルダー（テストでは一時フォルダーを渡す）
     startup_dir: Path | None = None

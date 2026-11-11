@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, errorMessage } from '../api/client'
-import type { AppSettings, Speaker, SpeakersResponse, SttStatus } from '../api/types'
+import type { AppSettings, Speaker, SpeakersResponse, SttStatus, VoiceTune } from '../api/types'
 import { SpeechPlayer } from '../audio/SpeechPlayer'
+import { VoiceMaker, VoiceShop } from './VoiceStudio'
 
 interface Props {
   settings: AppSettings
@@ -184,7 +185,10 @@ function TtsSettings({ settings, update }: Props) {
     return () => playerRef.current?.dispose()
   }, [load])
 
-  const current = data?.speakers.find((s) => s.styles.some((st) => st.id === settings.tts_speaker))
+  const custom = settings.tts_custom_voices.find((v) => v.id === settings.tts_voice)
+  // 作った声を使っているときは、その元の声の利用規約を確認する
+  const baseStyle = custom ? custom.style_id : settings.tts_speaker
+  const current = data?.speakers.find((s) => s.styles.some((st) => st.id === baseStyle))
 
   const showPolicy = async (speaker: Speaker) => {
     setError('')
@@ -206,8 +210,7 @@ function TtsSettings({ settings, update }: Props) {
     }
   }
 
-  const preview = () => {
-    if (settings.tts_speaker == null) return
+  const play = (voice: number | VoiceTune) => {
     setError('')
     if (!playerRef.current) {
       playerRef.current = new SpeechPlayer()
@@ -215,7 +218,21 @@ function TtsSettings({ settings, update }: Props) {
     }
     playerRef.current.stop()
     playerRef.current.unlock()
-    playerRef.current.enqueue(SAMPLE_TEXT, settings.tts_speaker)
+    playerRef.current.enqueue(SAMPLE_TEXT, voice)
+  }
+
+  const preview = () => {
+    if (custom) play(custom)
+    else if (settings.tts_speaker != null) play(settings.tts_speaker)
+  }
+
+  const choose = (value: string) => {
+    if (value.startsWith('custom:')) {
+      update('tts_voice', value.slice('custom:'.length))
+    } else {
+      update('tts_voice', null)
+      update('tts_speaker', value === '' ? null : Number(value))
+    }
   }
 
   return (
@@ -231,19 +248,27 @@ function TtsSettings({ settings, update }: Props) {
       ) : (
         <>
           <label className="field">
-            <span>声</span>
-            <select
-              value={settings.tts_speaker ?? ''}
-              onChange={(e) => update('tts_speaker', e.target.value === '' ? null : Number(e.target.value))}
-            >
+            <span>使う声</span>
+            <select value={custom ? `custom:${custom.id}` : (settings.tts_speaker ?? '')} onChange={(e) => choose(e.target.value)}>
               <option value="">選択してください</option>
-              {data?.speakers.map((s) =>
-                s.styles.map((st) => (
-                  <option key={st.id} value={st.id}>
-                    {s.name}（{st.name}）{s.acknowledged ? '' : ' - 利用規約 未確認'}
-                  </option>
-                )),
+              {settings.tts_custom_voices.length > 0 && (
+                <optgroup label="作った声">
+                  {settings.tts_custom_voices.map((v) => (
+                    <option key={v.id} value={`custom:${v.id}`}>
+                      {v.name}
+                    </option>
+                  ))}
+                </optgroup>
               )}
+              <optgroup label="元の声">
+                {data?.speakers.map((s) =>
+                  s.styles.map((st) => (
+                    <option key={st.id} value={st.id}>
+                      {s.name}（{st.name}）{s.acknowledged ? '' : ' - 利用規約 未確認'}
+                    </option>
+                  )),
+                )}
+              </optgroup>
             </select>
           </label>
           {current && !current.acknowledged && (
@@ -269,7 +294,7 @@ function TtsSettings({ settings, update }: Props) {
       )}
       <label className="field">
         <span>
-          話す速さ: <strong>{settings.tts_speed.toFixed(1)}</strong>
+          話す速さ（元の声のとき）: <strong>{settings.tts_speed.toFixed(1)}</strong>
         </span>
         <input
           type="range"
@@ -280,6 +305,12 @@ function TtsSettings({ settings, update }: Props) {
           onChange={(e) => update('tts_speed', Number(e.target.value))}
         />
       </label>
+      {data?.available && (
+        <>
+          <VoiceMaker settings={settings} update={update} speakers={data.speakers} preview={play} />
+          <VoiceShop onChanged={() => void load()} />
+        </>
+      )}
       <label className="checkbox">
         <input type="checkbox" checked={settings.tts_auto_read} onChange={(e) => update('tts_auto_read', e.target.checked)} />
         返事を声で読み上げる

@@ -115,6 +115,15 @@ export function ChatPage({ aiName, visible = true }: Props) {
     api.speakers().then(setSpeakers, () => undefined)
   }, [visible])
 
+  // 読み上げエンジンが起動中などで使えなかったときは、使えるようになるまで5秒ごとに確認し直す
+  // （起動に1分ほどかかるため、開いたときの1回だけでは声が出ないままになる）
+  const speakersAvailable = speakers?.available
+  useEffect(() => {
+    if (!visible || speakersAvailable !== false) return
+    const id = window.setInterval(() => api.speakers().then(setSpeakers, () => undefined), 5000)
+    return () => window.clearInterval(id)
+  }, [visible, speakersAvailable])
+
   // アバターのいる場所（背景）と天気。時間帯で変わるので、開いている間は5分ごとに読み直す
   const [scene, setScene] = useState<Scene | null>(null)
   useEffect(() => {

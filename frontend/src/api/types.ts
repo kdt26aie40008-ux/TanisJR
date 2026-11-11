@@ -52,6 +52,8 @@ export interface AppSettings {
   tts_auto_read: boolean
   tts_engine_autostart: boolean
   tts_acknowledged_speakers: string[]
+  tts_custom_voices: CustomVoice[]
+  tts_voice: string | null
   avatar_id: string
   notifications_enabled: boolean
   default_reminder_minutes: number
@@ -297,6 +299,49 @@ export interface Speaker {
   speaker_uuid: string
   styles: { id: number; name: string }[]
   acknowledged: boolean
+}
+
+/** 声の調整（AivisSpeech の値。pitch は -0.15〜0.15） */
+export interface VoiceTune {
+  style_id: number
+  speed: number
+  pitch: number
+  intonation: number
+  tempo: number
+  volume: number
+}
+
+/** 設定で作った声 */
+export interface CustomVoice extends VoiceTune {
+  id: string
+  name: string
+}
+
+export interface HubVoice {
+  aivm_uuid: string
+  name: string
+  description: string
+  creator: string
+  timbre: string
+  timbre_label: string
+  styles: string[]
+  license_type: string
+  file_size: number
+  downloads: number
+  samples: { url: string; transcript: string }[]
+  installed: boolean
+}
+
+export interface VoiceInstallJob {
+  state: 'installing' | 'done' | 'error'
+  aivm_uuid: string
+  name: string
+  error: string
+}
+
+export interface InstalledVoices {
+  models: { aivm_uuid: string; name: string; speaker_uuids: string[] }[]
+  job: VoiceInstallJob | null
 }
 
 export interface SpeakersResponse {

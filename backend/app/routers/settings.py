@@ -22,6 +22,16 @@ def update_settings(
     if not values:
         raise AppError(400, "no_changes", "変更する項目がありません。")
     previous = services.settings.get()
+    if values.get("tts_voice") == "":
+        values["tts_voice"] = None  # 作った声を使わない（元の声に戻す）
+    voices = values.get("tts_custom_voices", [v.model_dump() for v in previous.tts_custom_voices])
+    voice = values.get("tts_voice", previous.tts_voice)
+    ids = [v["id"] for v in voices]
+    if len(ids) != len(set(ids)):
+        raise AppError(400, "duplicate_voice", "作った声の id が重複しています。")
+    if voice is not None and voice not in ids:
+        # 使っている声を消したら、元の声に戻す
+        values["tts_voice"] = None
     updated = services.settings.update(values)
     if updated.embedding_model != previous.embedding_model and not services.vault.locked:
         # 埋め込みモデルが変わったら新しいモデルで索引を作り直す

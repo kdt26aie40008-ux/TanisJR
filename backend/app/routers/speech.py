@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Path, Query, Request
 from fastapi.responses import Response
 
 from app.deps import Services, get_services
 from app.errors import AppError
-from app.schemas import SpeakerAck, TtsRequest, WhisperDownloadRequest
+from app.schemas import AppSettings, SpeakerAck, TtsRequest, VoiceInstallRequest, WhisperDownloadRequest
 from app.speech.stt import MAX_AUDIO_BYTES, SttError
-from app.speech.tts import TtsError, clean_for_speech
+from app.speech.tts import TtsError, VoiceTune, clean_for_speech
+from app.speech.voice_hub import TIMBRE_LABELS, UUID_PATTERN, HubError, VoiceTimbre
 
 logger = logging.getLogger(__name__)
 
@@ -164,10 +165,26 @@ async def acknowledge(body: SpeakerAck, services: Services = Depends(get_service
     return {"acknowledged": True}
 
 
+def resolve_voice(body: TtsRequest, settings: AppSettings) -> tuple[int | None, VoiceTune]:
+    """読み上げに使う声（スタイル id と調整）を決める。
+
+    試聴中の調整 → 試聴する元の声 → 設定で選んだ「作った声」→ 設定で選んだ元の声、の順。
+    """
+    if body.tune is not None:
+        t = body.tune
+        return t.style_id, VoiceTune(t.speed, t.pitch, t.intonation, t.tempo, t.volume)
+    if body.speaker is not None:
+        return body.speaker, VoiceTune(speed=settings.tts_speed)
+    custom = next((v for v in settings.tts_custom_voices if v.id == settings.tts_voice), None)
+    if custom is not None:
+        return custom.style_id, VoiceTune(custom.speed, custom.pitch, custom.intonation, custom.tempo, custom.volume)
+    return settings.tts_speaker, VoiceTune(speed=settings.tts_speed)
+
+
 @router.post("/tts")
 async def synthesize(body: TtsRequest, services: Services = Depends(get_services)) -> Response:
     settings = services.settings.get()
-    style_id = body.speaker if body.speaker is not None else settings.tts_speaker
+    style_id, tune = resolve_voice(body, settings)
     if style_id is None:
         raise AppError(409, "tts_speaker_not_selected", "読み上げの声が選択されていません。設定画面で選択してください。")
     text = clean_for_speech(body.text)
@@ -185,7 +202,82 @@ async def synthesize(body: TtsRequest, services: Services = Depends(get_services
             raise AppError(
                 409, "tts_license_not_acknowledged", "この声の利用規約が未確認です。設定画面で利用規約を確認してください。"
             )
-        audio = await services.tts.synthesize(text, style_id, settings.tts_speed)
+        audio = await services.tts.synthesize(text, style_id, tune)
     except TtsError as exc:
         raise _tts_error(exc) from exc
     return Response(content=audio, media_type="audio/wav", headers={"Cache-Control": "no-store"})
+
+
+# ---------- 声を増やす（AivisHub から追加） ----------
+
+
+def _hub_error(exc: HubError) -> AppError:
+    return AppError(exc.status, exc.code, exc.message)
+
+
+@router.get("/voices/hub")
+async def hub_voices(
+    timbre: list[VoiceTimbre] = Query(default=[]), services: Services = Depends(get_services)
+) -> dict:
+    """AivisHub の声の一覧（声の種類で絞り込める）。追加済みかどうかも返す。"""
+    try:
+        items = await services.voice_hub.search(list(timbre))
+    except HubError as exc:
+        raise _hub_error(exc) from exc
+    try:
+        installed = {m["aivm_uuid"] for m in await services.tts.installed_models()}
+    except TtsError:
+        installed = set()
+    return {
+        "timbres": [{"id": k, "label": v} for k, v in TIMBRE_LABELS.items()],
+        "voices": [{**v, "installed": v["aivm_uuid"] in installed} for v in items],
+    }
+
+
+@router.get("/voices/hub/{aivm_uuid}/sample/{index}")
+async def hub_sample(
+    index: int, aivm_uuid: str = Path(pattern=UUID_PATTERN), services: Services = Depends(get_services)
+) -> Response:
+    try:
+        audio = await services.voice_hub.sample(aivm_uuid, index)
+    except HubError as exc:
+        raise _hub_error(exc) from exc
+    return Response(content=audio, media_type="audio/wav", headers={"Cache-Control": "no-store"})
+
+
+@router.get("/voices/installed")
+async def installed_voices(services: Services = Depends(get_services)) -> dict:
+    try:
+        models = await services.tts.installed_models()
+    except TtsError as exc:
+        raise _tts_error(exc) from exc
+    return {"models": models, "job": services.voice_hub.job.public() if services.voice_hub.job else None}
+
+
+@router.post("/voices/install", status_code=202)
+async def install_voice(body: VoiceInstallRequest, services: Services = Depends(get_services)) -> dict:
+    if not body.confirmed:
+        raise AppError(400, "confirmation_required", "ダウンロードの容量と入手元を確認してください。")
+    try:
+        await services.tts.version()
+    except TtsError as exc:
+        raise _tts_error(exc) from exc
+    try:
+        job = services.voice_hub.start_install(body.aivm_uuid)
+    except HubError as exc:
+        raise _hub_error(exc) from exc
+    return {"job": job.public()}
+
+
+@router.delete("/voices/{aivm_uuid}")
+async def uninstall_voice(aivm_uuid: str = Path(pattern=UUID_PATTERN), services: Services = Depends(get_services)) -> dict:
+    try:
+        models = await services.tts.installed_models()
+        if not any(m["aivm_uuid"] == aivm_uuid for m in models):
+            raise AppError(404, "voice_not_found", "その声は追加されていません。")
+        if len(models) <= 1:
+            raise AppError(409, "last_voice", "最後の1つの声は削除できません。")
+        await services.tts.uninstall_model(aivm_uuid)
+    except TtsError as exc:
+        raise _tts_error(exc) from exc
+    return {"removed": True}

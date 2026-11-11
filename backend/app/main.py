@@ -53,6 +53,7 @@ from app.services.memory import MemoryService
 from app.speech.engine import EngineLauncher
 from app.speech.stt import Transcriber, WhisperService
 from app.speech.tts import AivisClient
+from app.speech.voice_hub import VoiceHub
 from app.vector_index import VectorIndex
 
 logger = logging.getLogger("twin")
@@ -100,6 +101,7 @@ def create_app(
     aivis_engine_path: Path | None = None,
     weather_transport: httpx.AsyncBaseTransport | None = None,
     remote: RemoteAccess | None = None,
+    voice_hub_transport: httpx.AsyncBaseTransport | None = None,
 ) -> FastAPI:
     config = config or load_config()
     db = Database(config.db_path)
@@ -141,6 +143,7 @@ def create_app(
         weather=WeatherService(transport=weather_transport),
         backgrounds=BackgroundStore(config.data_dir / "backgrounds"),
         remote=remote or RemoteAccess(config.data_dir, config.port),
+        voice_hub=VoiceHub(tts, transport=voice_hub_transport),
         scheduler=NotificationScheduler(db, settings_repo, calendar, notifier),
         startup_dir=startup_dir,
         allow_process_control=allow_process_control,
@@ -170,7 +173,9 @@ def create_app(
                 # 予定の通知（再起動後も DB の状態から再開する）
                 tasks.append(asyncio.create_task(services.scheduler.run_forever()))
             settings_now = services.settings.get()
-            if start_scheduler and settings_now.tts_engine_autostart and settings_now.tts_speaker is not None:
+            if start_scheduler and settings_now.tts_engine_autostart and (
+                settings_now.tts_speaker is not None or settings_now.tts_voice is not None
+            ):
                 # 読み上げを使う設定なら、AivisSpeech のアプリを開かなくてもエンジンを起動しておく
                 services.tts_engine.ensure_started()
         yield
@@ -180,6 +185,7 @@ def create_app(
         await services.tts.aclose()
         await services.google.aclose()
         await services.weather.aclose()
+        await services.voice_hub.aclose()
 
     app = FastAPI(title="AnotherMe", version=__version__, lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.services = services
